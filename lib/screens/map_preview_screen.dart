@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MapPreviewScreen extends StatelessWidget {
   final double latitude;
@@ -24,38 +23,20 @@ class MapPreviewScreen extends StatelessWidget {
       body: Column(
         children: [
           Expanded(
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: center,
-                initialZoom: 16,
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: center,
+                zoom: 16,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.example.app',
-                  tileProvider: NetworkTileProvider(
-                    headers: const {
-                      'User-Agent': 'EduSST/1.0',
-                    },
-                  ),
+              markers: {
+                Marker(
+                  markerId: const MarkerId('event_location'),
+                  position: center,
                 ),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: center,
-                      width: 40,
-                      height: 40,
-                      child: Icon(
-                        Icons.location_pin,
-                        color: Theme.of(context).colorScheme.error,
-                        size: 36,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              },
+              zoomControlsEnabled: true,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
             ),
           ),
           Padding(
@@ -75,7 +56,7 @@ class MapPreviewScreen extends StatelessWidget {
                   ),
                 const SizedBox(height: 6),
                 Text(
-                  '© OpenStreetMap contributors',
+                  'Mapa Google',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),

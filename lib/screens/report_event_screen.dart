@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/event_service.dart';
 import 'map_preview_screen.dart';
 
@@ -492,40 +491,24 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
           borderRadius: BorderRadius.circular(12),
           child: SizedBox(
             height: 180,
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: center,
-                initialZoom: 16,
-                interactionOptions:
-                    const InteractionOptions(flags: InteractiveFlag.none),
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: center,
+                zoom: 16,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  subdomains: const ['a', 'b', 'c'],
-                  userAgentPackageName: 'com.example.app',
-                  tileProvider: NetworkTileProvider(
-                    headers: const {
-                      'User-Agent': 'EduSST/1.0',
-                    },
-                  ),
+              markers: {
+                Marker(
+                  markerId: const MarkerId('preview'),
+                  position: center,
                 ),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: center,
-                      width: 36,
-                      height: 36,
-                      child: Icon(
-                        Icons.location_pin,
-                        color: Theme.of(context).colorScheme.error,
-                        size: 32,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              },
+              zoomControlsEnabled: false,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              scrollGesturesEnabled: false,
+              zoomGesturesEnabled: false,
+              rotateGesturesEnabled: false,
+              tiltGesturesEnabled: false,
             ),
           ),
         ),

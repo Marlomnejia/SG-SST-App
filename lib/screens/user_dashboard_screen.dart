@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../services/user_service.dart';
 import 'capacitaciones_screen.dart';
 import 'login_screen.dart';
 import 'my_reports_screen.dart';
@@ -15,6 +17,8 @@ class UserDashboardScreen extends StatefulWidget {
 
 class _UserDashboardScreenState extends State<UserDashboardScreen> {
   final AuthService _authService = AuthService();
+  final UserService _userService = UserService();
+  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
 
   Future<void> _confirmLogout() async {
     final bool? shouldLogout = await showDialog<bool>(
@@ -56,17 +60,18 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     final scheme = theme.colorScheme;
     final Color primary = scheme.primary;
     final Color accent = scheme.secondary;
-    final Color softSurface = scheme.surfaceContainerHighest;
-    final Color softBorder = scheme.outlineVariant.withOpacity(0.6);
+    final Color softSurface = scheme.surface;
+    final Color softBorder = scheme.outlineVariant;
     final Color background = scheme.surface;
 
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
-        title: const Text('Mi Panel'),
-        backgroundColor: primary,
-        foregroundColor: Colors.white,
+        title: const Text('Panel personal'),
+        backgroundColor: background,
+        foregroundColor: scheme.onSurface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -75,195 +80,193 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
+      body: Stack(
         children: [
-          _buildHeaderCard(theme, primary, accent),
-          const SizedBox(height: 20),
-          _buildSectionTitle(context, 'Accesos principales'),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth;
-              final int columns = width > 900 ? 3 : 2;
-              const double spacing = 12.0;
-              final double itemWidth =
-                  (width - (columns - 1) * spacing) / columns;
-
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: [
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildManagementTile(
-                      context,
-                      icon: Icons.add_circle_outline,
-                      title: 'Reportar evento',
-                      subtitle: 'Incidente o accidente',
-                      color: primary,
-                      backgroundColor: softSurface,
-                      borderColor: softBorder,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ReportEventScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildManagementTile(
-                      context,
-                      icon: Icons.school_outlined,
-                      title: 'Capacitaciones',
-                      subtitle: 'Gestion personal',
-                      color: accent,
-                      backgroundColor: softSurface,
-                      borderColor: softBorder,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const CapacitacionesScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildManagementTile(
-                      context,
-                      icon: Icons.assignment_turned_in_outlined,
-                      title: 'Mis reportes',
-                      subtitle: 'Seguimiento personal',
-                      color: scheme.tertiary,
-                      backgroundColor: softSurface,
-                      borderColor: softBorder,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const MyReportsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildManagementTile(
-                      context,
-                      icon: Icons.person_outline,
-                      title: 'Perfil',
-                      subtitle: 'Configuracion de cuenta',
-                      color: scheme.primaryContainer,
-                      backgroundColor: softSurface,
-                      borderColor: softBorder,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ProfileScreen(),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  scheme.primary.withOpacity(0.08),
+                  scheme.tertiary.withOpacity(0.06),
+                  scheme.surface,
                 ],
-              );
-            },
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
           ),
-          const SizedBox(height: 24),
-          _buildSectionTitle(context, 'Resumen personal'),
-          const SizedBox(height: 12),
-          _buildInfoCard(
-            context,
-            icon: Icons.warning_amber_rounded,
-            title: 'Mis reportes activos',
-            subtitle: 'Consulta el estado de tus reportes.',
-            color: scheme.secondary,
-            backgroundColor: softSurface,
-            borderColor: softBorder,
+          Positioned(
+            top: -70,
+            right: -40,
+            child: _buildGlowCircle(scheme.primary, 140),
           ),
-          const SizedBox(height: 12),
-          _buildInfoCard(
-            context,
-            icon: Icons.event_available,
-            title: 'Capacitaciones pendientes',
-            subtitle: 'Revisa tus cursos y fechas limite.',
-            color: scheme.primary,
-            backgroundColor: softSurface,
-            borderColor: softBorder,
+          Positioned(
+            bottom: -90,
+            left: -40,
+            child: _buildGlowCircle(scheme.secondary, 180),
+          ),
+          SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(16.0),
+              children: [
+                _buildHeroCard(theme, primary, accent),
+                const SizedBox(height: 24),
+                _buildSectionTitle(context, 'Accesos principales'),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final width = constraints.maxWidth;
+                    final int columns = width > 900 ? 3 : 2;
+                    const double spacing = 12.0;
+                    final double itemWidth =
+                        (width - (columns - 1) * spacing) / columns;
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: [
+                        SizedBox(
+                          width: itemWidth,
+                          child: _buildActionCard(
+                            context,
+                            icon: Icons.add_circle_outline,
+                            title: 'Reportar evento',
+                            subtitle: 'Incidente o accidente',
+                            color: primary,
+                            backgroundColor: softSurface,
+                            borderColor: softBorder,
+                            isPrimary: true,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const ReportEventScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _buildActionCard(
+                            context,
+                            icon: Icons.school_outlined,
+                            title: 'Capacitaciones',
+                            subtitle: 'Gestion personal',
+                            color: scheme.primary,
+                            backgroundColor: softSurface,
+                            borderColor: softBorder,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const CapacitacionesScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _buildActionCard(
+                            context,
+                            icon: Icons.assignment_turned_in_outlined,
+                            title: 'Mis reportes',
+                            subtitle: 'Seguimiento personal',
+                            color: scheme.tertiary,
+                            backgroundColor: softSurface,
+                            borderColor: softBorder,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const MyReportsScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: itemWidth,
+                          child: _buildActionCard(
+                            context,
+                            icon: Icons.person_outline,
+                            title: 'Perfil',
+                            subtitle: 'Configuracion de cuenta',
+                            color: scheme.primary,
+                            backgroundColor: softSurface,
+                            borderColor: softBorder,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const ProfileScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                _buildSectionTitle(context, 'Resumen personal'),
+                const SizedBox(height: 12),
+                _buildSummaryTile(
+                  context,
+                  icon: Icons.warning_amber_rounded,
+                  title: 'Mis reportes activos',
+                  subtitle: 'Consulta el estado de tus reportes.',
+                  color: scheme.secondary,
+                  backgroundColor: softSurface,
+                  borderColor: softBorder,
+                ),
+                const SizedBox(height: 12),
+                _buildSummaryTile(
+                  context,
+                  icon: Icons.event_available,
+                  title: 'Capacitaciones pendientes',
+                  subtitle: 'Revisa tus cursos y fechas limite.',
+                  color: scheme.primary,
+                  backgroundColor: softSurface,
+                  borderColor: softBorder,
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeaderCard(ThemeData theme, Color primary, Color accent) {
+  Widget _buildHeroCard(ThemeData theme, Color primary, Color accent) {
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            primary.withOpacity(0.85),
-            accent.withOpacity(0.85),
+            primary.withOpacity(0.9),
+            theme.colorScheme.tertiary.withOpacity(0.85),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: primary.withOpacity(0.2),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
+        padding: const EdgeInsets.all(18.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              height: 48,
-              width: 48,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.shield_outlined, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Panel personal SST',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Gestiona tus reportes y capacitaciones',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Activo',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-            ),
+            _buildHeroUserRow(theme),
           ],
         ),
       ),
@@ -280,7 +283,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     );
   }
 
-  Widget _buildManagementTile(
+  Widget _buildActionCard(
     BuildContext context, {
     required IconData icon,
     required String title,
@@ -289,6 +292,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     required Color backgroundColor,
     required Color borderColor,
     required VoidCallback onTap,
+    bool isPrimary = false,
   }) {
     return Material(
       color: backgroundColor,
@@ -298,6 +302,13 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: borderColor),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -311,7 +322,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                   height: 40,
                   width: 40,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
+                    color: color.withOpacity(isPrimary ? 0.18 : 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: color),
@@ -330,6 +341,20 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      isPrimary ? 'Empezar ahora' : 'Abrir',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(Icons.arrow_forward, size: 16, color: color),
+                  ],
+                ),
               ],
             ),
           ),
@@ -338,7 +363,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     );
   }
 
-  Widget _buildInfoCard(
+  Widget _buildSummaryTile(
     BuildContext context, {
     required IconData icon,
     required String title,
@@ -353,6 +378,13 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
         color: backgroundColor,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -386,8 +418,163 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
               ],
             ),
           ),
+          Icon(Icons.chevron_right, color: borderColor),
         ],
       ),
     );
+  }
+
+  Widget _buildGlowCircle(Color color, double size) {
+    return Container(
+      height: size,
+      width: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withOpacity(0.18),
+      ),
+    );
+  }
+
+  Widget _buildHeroUserRow(ThemeData theme) {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) {
+      return _buildHeroUserContent(theme, user, null);
+    }
+
+    return StreamBuilder(
+      stream: _userService.streamUserProfile(user.uid),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        return _buildHeroUserContent(theme, user, data);
+      },
+    );
+  }
+
+  Widget _buildHeroUserContent(
+    ThemeData theme,
+    User? user,
+    Map<String, dynamic>? data,
+  ) {
+    final displayName = _resolveDisplayName(data: data, user: user);
+    final photoUrl = _resolvePhotoUrl(data: data, user: user);
+    final greeting = _greetingForHour(DateTime.now().hour);
+    final initials = _initialsFrom(displayName);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ProfileScreen(),
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: Colors.white24,
+              backgroundImage:
+                  photoUrl == null || photoUrl.isEmpty ? null : NetworkImage(photoUrl),
+              child: photoUrl == null || photoUrl.isEmpty
+                  ? Text(
+                      initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$greeting,',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ),
+                  Text(
+                    displayName,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              'Ver perfil',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _greetingForHour(int hour) {
+    if (hour < 12) {
+      return 'Buenos dias';
+    }
+    if (hour < 18) {
+      return 'Buenas tardes';
+    }
+    return 'Buenas noches';
+  }
+
+  String _resolveDisplayName({
+    Map<String, dynamic>? data,
+    User? user,
+  }) {
+    final dataName = data?['displayName'] as String?;
+    if (dataName != null && dataName.trim().isNotEmpty) {
+      return dataName.trim();
+    }
+    final authName = user?.displayName;
+    if (authName != null && authName.trim().isNotEmpty) {
+      return authName.trim();
+    }
+    final email = user?.email;
+    if (email != null && email.contains('@')) {
+      return email.split('@').first;
+    }
+    return 'Usuario';
+  }
+
+  String? _resolvePhotoUrl({
+    Map<String, dynamic>? data,
+    User? user,
+  }) {
+    final dataUrl = data?['photoUrl'] as String?;
+    if (dataUrl != null && dataUrl.trim().isNotEmpty) {
+      return dataUrl.trim();
+    }
+    final authUrl = user?.photoURL;
+    if (authUrl != null && authUrl.trim().isNotEmpty) {
+      return authUrl.trim();
+    }
+    return null;
+  }
+
+  String _initialsFrom(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    final letters = parts.map((p) => p[0]).take(2).join();
+    if (letters.isEmpty) {
+      return 'U';
+    }
+    return letters.toUpperCase();
   }
 }
