@@ -12,6 +12,7 @@ class EventService {
     String tipo,
     String descripcion,
     List<XFile> images, {
+    List<XFile> videos = const [],
     String? location,
     String? category,
     String? severity,
@@ -38,6 +39,7 @@ class EventService {
         'categoria': category,
         'severidad': severity,
         'fotoUrls': [], // Initialize as an empty list
+        'videoUrls': [], // Initialize as an empty list
       };
 
       if (eventDateTime != null) {
@@ -60,6 +62,11 @@ class EventService {
         
         // Step 3: Update the document with the photo URLs
         await docRef.update({'fotoUrls': downloadUrls});
+      }
+      if (videos.isNotEmpty) {
+        List<String> downloadUrls =
+            await _storageService.uploadEventVideos(videos, docRef.id);
+        await docRef.update({'videoUrls': downloadUrls});
       }
     } on FirebaseException catch (e) {
       // Re-throw the exception to be handled by the UI

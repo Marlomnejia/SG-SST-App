@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:video_player/video_player.dart';
 import '../services/event_service.dart';
 import 'map_preview_screen.dart';
 
@@ -30,6 +31,8 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   String? _gpsAddress;
   bool _isLocating = false;
   List<XFile> _selectedImages = [];
+  List<XFile> _selectedVideos = [];
+  final List<VideoPlayerController> _videoControllers = [];
   bool _isLoading = false;
 
   Future<void> _pickImageFromCamera() async {
@@ -50,9 +53,31 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     }
   }
 
+  Future<void> _pickVideoFromCamera() async {
+    final XFile? pickedFile = await _picker.pickVideo(source: ImageSource.camera);
+    if (pickedFile != null) {
+      await _addVideo(pickedFile);
+    }
+  }
+
+  Future<void> _pickVideoFromGallery() async {
+    final XFile? pickedFile = await _picker.pickVideo(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      await _addVideo(pickedFile);
+    }
+  }
+
   void _removeImage(int index) {
     setState(() {
       _selectedImages.removeAt(index);
+    });
+  }
+
+  void _removeVideo(int index) {
+    setState(() {
+      _selectedVideos.removeAt(index);
+      _videoControllers[index].dispose();
+      _videoControllers.removeAt(index);
     });
   }
 
@@ -67,6 +92,7 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
           _selectedType,
           _descriptionController.text,
           _selectedImages,
+          videos: _selectedVideos,
           location: _locationController.text.trim(),
           category: _selectedCategory,
           severity: _selectedSeverity,
@@ -86,6 +112,11 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
           _descriptionController.clear();
           _locationController.clear();
           _selectedImages.clear();
+          _selectedVideos.clear();
+          for (final controller in _videoControllers) {
+            controller.dispose();
+          }
+          _videoControllers.clear();
           _eventDateTime = null;
           _latitude = null;
           _longitude = null;
@@ -111,6 +142,9 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   void dispose() {
     _descriptionController.dispose();
     _locationController.dispose();
+    for (final controller in _videoControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -212,6 +246,21 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     );
   }
 
+  Future<void> _addVideo(XFile file) async {
+    final controller = VideoPlayerController.file(File(file.path));
+    await controller.setVolume(0);
+    await controller.initialize();
+    controller.setLooping(true);
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
+    setState(() {
+      _selectedVideos.add(file);
+      _videoControllers.add(controller);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -301,8 +350,11 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
                     ),
                     const SizedBox(height: 16),
                     _buildMediaActions(),
+                    const SizedBox(height: 12),
+                    _buildVideoActions(),
                     const SizedBox(height: 16),
                     if (_selectedImages.isNotEmpty) _buildImagePreview(),
+                    if (_selectedVideos.isNotEmpty) _buildVideoPreview(),
                   ],
                 ),
               ),
@@ -558,6 +610,28 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     );
   }
 
+  Widget _buildVideoActions() {
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.videocam),
+            label: const Text('Grabar video'),
+            onPressed: _pickVideoFromCamera,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.video_library),
+            label: const Text('Video'),
+            onPressed: _pickVideoFromGallery,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildImagePreview() {
     return GridView.builder(
       shrinkWrap: true,
@@ -595,6 +669,111 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildVideoPreview() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Videos adjuntos:',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _selectedVideos.length,
+          itemBuilder: (context, index) {
+            final file = _selectedVideos[index];
+            final controller = _videoControllers[index];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
+                      child: AspectRatio(
+                        aspectRatio: controller.value.isInitialized
+                            ? controller.value.aspectRatio
+                            : 16 / 9,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            if (controller.value.isInitialized)
+                              VideoPlayer(controller)
+                            else
+                              Container(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .surfaceContainerHighest,
+                              ),
+                            IconButton(
+                              icon: Icon(
+                                controller.value.isPlaying
+                                    ? Icons.pause_circle_filled
+                                    : Icons.play_circle_fill,
+                                size: 48,
+                                color: Colors.white,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  if (controller.value.isPlaying) {
+                                    controller.pause();
+                                  } else {
+                                    controller.play();
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.videocam, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              file.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => _removeVideo(index),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

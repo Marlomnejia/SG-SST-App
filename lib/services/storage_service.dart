@@ -19,4 +19,22 @@ class StorageService {
     }
     return downloadUrls;
   }
+
+  Future<List<String>> uploadEventVideos(List<XFile> videos, String eventId) async {
+    List<String> downloadUrls = [];
+    try {
+      for (var video in videos) {
+        String fileName = '${DateTime.now().millisecondsSinceEpoch}_${video.name}';
+        Reference ref =
+            FirebaseStorage.instance.ref().child('eventos/$eventId/videos/$fileName');
+        UploadTask uploadTask = ref.putFile(File(video.path));
+        TaskSnapshot snapshot = await uploadTask;
+        String downloadUrl = await snapshot.ref.getDownloadURL();
+        downloadUrls.add(downloadUrl);
+      }
+    } catch (e) {
+      print('Error uploading videos: $e');
+    }
+    return downloadUrls;
+  }
 }

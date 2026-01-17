@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:video_player/video_player.dart';
 import 'full_screen_image_screen.dart';
 import 'create_action_plan_screen.dart';
 
@@ -116,6 +117,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
     final String reportadoPor = data['reportadoPor_email'] ?? 'Anonimo';
     final Timestamp timestamp = data['fechaReporte'] ?? Timestamp.now();
     final List<dynamic> fotoUrls = data['fotoUrls'] ?? [];
+    final List<dynamic> videoUrls = data['videoUrls'] ?? [];
     final String categoria = data['categoria'] ?? 'No especificada';
     final String severidad = data['severidad'] ?? 'No especificada';
     final String lugar = data['lugar'] ?? 'No especificado';
@@ -256,6 +258,32 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
                   const SizedBox(height: 24.0),
                 ],
               ),
+            if (videoUrls.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Videos adjuntos:',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8.0),
+                  SizedBox(
+                    height: 220,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: videoUrls.length,
+                      itemBuilder: (context, index) {
+                        final url = videoUrls[index] as String;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 12.0),
+                          child: _NetworkVideoCard(url: url),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 24.0),
+                ],
+              ),
             DropdownButtonFormField<String>(
               value: _selectedStatus,
               decoration: const InputDecoration(
@@ -372,6 +400,89 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen> {
                     );
                   },
                 );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NetworkVideoCard extends StatefulWidget {
+  final String url;
+
+  const _NetworkVideoCard({required this.url});
+
+  @override
+  State<_NetworkVideoCard> createState() => _NetworkVideoCardState();
+}
+
+class _NetworkVideoCardState extends State<_NetworkVideoCard> {
+  late final VideoPlayerController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller.setLooping(true);
+    _controller.setVolume(0);
+    _controller.initialize().then((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 240,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AspectRatio(
+              aspectRatio:
+                  _controller.value.isInitialized ? _controller.value.aspectRatio : 16 / 9,
+              child: _controller.value.isInitialized
+                  ? VideoPlayer(_controller)
+                  : Container(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                    ),
+            ),
+            IconButton(
+              icon: Icon(
+                _controller.value.isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_fill,
+                size: 52,
+                color: Colors.white,
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_controller.value.isPlaying) {
+                    _controller.pause();
+                  } else {
+                    _controller.play();
+                  }
+                });
               },
             ),
           ],
