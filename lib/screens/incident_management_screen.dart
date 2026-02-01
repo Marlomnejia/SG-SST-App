@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'incident_detail_screen.dart';
+import '../services/event_service.dart';
 
 class IncidentManagementScreen extends StatefulWidget {
   const IncidentManagementScreen({super.key});
@@ -11,110 +12,209 @@ class IncidentManagementScreen extends StatefulWidget {
 }
 
 class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
-  late final Stream<QuerySnapshot> _incidentsStream;
+  final EventService _eventService = EventService();
+  Stream<QuerySnapshot>? _incidentsStream;
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _incidentsStream = FirebaseFirestore.instance
-        .collection('eventos')
-        .orderBy('fechaReporte', descending: true)
-        .snapshots();
+    _loadInstitutionAndEvents();
+  }
+
+  Future<void> _loadInstitutionAndEvents() async {
+    try {
+      final institutionId = await _eventService.getCurrentUserInstitutionId();
+      if (institutionId == null) {
+        setState(() {
+          _error = 'No se encontró la institución del usuario.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _incidentsStream = _eventService.getEventsStream(institutionId);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Error al cargar los eventos: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestion de incidentes'),
+        title: const Text('Gestión de incidentes'),
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _incidentsStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('No hay reportes pendientes.'));
-          }
+      body: _buildBody(scheme),
+    );
+  }
 
-          final incidents = snapshot.data!.docs;
+  Widget _buildBody(ColorScheme scheme) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          return ListView.builder(
-            itemCount: incidents.length,
-            itemBuilder: (context, index) {
-              final incident = incidents[index];
-              final data = incident.data() as Map<String, dynamic>;
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: scheme.error),
+              const SizedBox(height: 16),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scheme.error),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _isLoading = true;
+                    _error = null;
+                  });
+                  _loadInstitutionAndEvents();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-              final String tipo = data['tipo'] ?? 'No especificado';
-              final String descripcion = data['descripcion'] ?? 'Sin descripcion';
-              final String reportadoPor = data['reportadoPor_email'] ?? 'Anonimo';
-              final Timestamp timestamp = data['fechaReporte'] ?? Timestamp.now();
-              final String estado = data['estado'] ?? 'desconocido';
-              final String lugar = data['lugar'] ?? 'Sin lugar';
-              final String categoria = data['categoria'] ?? 'Sin categoria';
-              final String severidad = data['severidad'] ?? 'Sin severidad';
+    if (_incidentsStream == null) {
+      return const Center(child: Text('No hay stream de eventos.'));
+    }
 
-              final DateTime fechaReporte = timestamp.toDate();
-              final String fechaFormateada =
-                  DateFormat('dd/MM/yyyy, hh:mm a').format(fechaReporte);
-
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-                ),
-                child: ListTile(
-                  leading: Icon(
-                    tipo == 'Accidente' ? Icons.warning : Icons.report_problem,
-                    color: tipo == 'Accidente' ? scheme.error : scheme.tertiary,
+    return StreamBuilder<QuerySnapshot>(
+      stream: _incidentsStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: scheme.error),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error: ${snapshot.error}',
+                    textAlign: TextAlign.center,
                   ),
-                  title: Text(descripcion, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('$reportadoPor - $fechaFormateada'),
-                      Text(lugar),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          _buildMetaChip(context, categoria),
-                          _buildMetaChip(context, severidad, isSeverity: true),
-                        ],
-                      ),
-                    ],
-                  ),
-                  trailing: Chip(
-                    label: Text(
-                      estado,
-                      style: TextStyle(color: _getStatusTextColor(estado, scheme)),
-                    ),
-                    backgroundColor: _getStatusColor(estado, scheme),
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            IncidentDetailScreen(eventDocument: incident),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
+                ],
+              ),
+            ),
           );
-        },
-      ),
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.inbox_outlined,
+                  size: 64,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No hay reportes pendientes.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final incidents = snapshot.data!.docs;
+
+        return ListView.builder(
+          itemCount: incidents.length,
+          itemBuilder: (context, index) {
+            final incident = incidents[index];
+            final data = incident.data() as Map<String, dynamic>;
+
+            final String tipo = data['tipo'] ?? 'No especificado';
+            final String descripcion = data['descripcion'] ?? 'Sin descripcion';
+            final String reportadoPor = data['reportadoPor_email'] ?? 'Anonimo';
+            final Timestamp timestamp = data['fechaReporte'] ?? Timestamp.now();
+            final String estado = data['estado'] ?? 'desconocido';
+            final String lugar = data['lugar'] ?? 'Sin lugar';
+            final String categoria = data['categoria'] ?? 'Sin categoria';
+            final String severidad = data['severidad'] ?? 'Sin severidad';
+
+            final DateTime fechaReporte = timestamp.toDate();
+            final String fechaFormateada =
+                DateFormat('dd/MM/yyyy, hh:mm a').format(fechaReporte);
+
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: ListTile(
+                leading: Icon(
+                  tipo == 'Accidente' ? Icons.warning : Icons.report_problem,
+                  color: tipo == 'Accidente' ? scheme.error : scheme.tertiary,
+                ),
+                title: Text(descripcion, maxLines: 2, overflow: TextOverflow.ellipsis),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('$reportadoPor - $fechaFormateada'),
+                    Text(lugar),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _buildMetaChip(context, categoria),
+                        _buildMetaChip(context, severidad, isSeverity: true),
+                      ],
+                    ),
+                  ],
+                ),
+                trailing: Chip(
+                  label: Text(
+                    estado,
+                    style: TextStyle(color: _getStatusTextColor(estado, scheme)),
+                  ),
+                  backgroundColor: _getStatusColor(estado, scheme),
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          IncidentDetailScreen(eventDocument: incident),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

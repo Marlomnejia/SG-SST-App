@@ -2,11 +2,39 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'storage_service.dart';
+import 'user_service.dart';
 
 class EventService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final StorageService _storageService = StorageService();
+  final UserService _userService = UserService();
+
+  /// Obtiene el stream de eventos filtrados por institución
+  /// Requerido para cumplir con las reglas de seguridad de Firestore
+  Stream<QuerySnapshot> getEventsStream(String institutionId) {
+    return _firestore
+        .collection('eventos')
+        .where('institutionId', isEqualTo: institutionId)
+        .orderBy('fechaReporte', descending: true)
+        .snapshots();
+  }
+
+  /// Obtiene eventos de una institución (Future)
+  Future<QuerySnapshot> getEvents(String institutionId) {
+    return _firestore
+        .collection('eventos')
+        .where('institutionId', isEqualTo: institutionId)
+        .orderBy('fechaReporte', descending: true)
+        .get();
+  }
+
+  /// Obtiene el institutionId del usuario actual
+  Future<String?> getCurrentUserInstitutionId() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    return await _userService.getUserInstitutionId(user.uid);
+  }
 
   Future<void> addEvent(
     String tipo,
@@ -27,7 +55,13 @@ class EventService {
         throw Exception('No hay un usuario autenticado.');
       }
 
-      // Step 1: Create the document with an empty list of photoUrls
+      // Obtener institutionId del usuario actual
+      final institutionId = await _userService.getUserInstitutionId(currentUser.uid);
+      if (institutionId == null) {
+        throw Exception('El usuario no pertenece a ninguna institución.');
+      }
+
+      // Step 1: Create the document with institutionId for security rules
       final Map<String, dynamic> data = {
         'tipo': tipo,
         'descripcion': descripcion,
@@ -35,6 +69,7 @@ class EventService {
         'estado': 'reportado',
         'reportadoPor_uid': currentUser.uid,
         'reportadoPor_email': currentUser.email,
+        'institutionId': institutionId, // Requerido para reglas de seguridad
         'lugar': location,
         'categoria': category,
         'severidad': severity,

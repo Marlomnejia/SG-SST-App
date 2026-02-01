@@ -9,6 +9,10 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/user_dashboard_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/verification_pending_screen.dart';
+import 'screens/verify_email_screen.dart';
+import 'services/institution_service.dart';
+import 'models/institution.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(
@@ -149,9 +153,10 @@ class AuthWrapper extends StatelessWidget {
         }
         if (snapshot.hasData && snapshot.data != null) {
           final user = snapshot.data!;
+          // Si el email no está verificado, mostrar pantalla de verificación
+          // NO hacer signOut aquí para no interrumpir el proceso de registro
           if (!user.emailVerified) {
-            FirebaseAuth.instance.signOut();
-            return const LoginScreen();
+            return const VerifyEmailScreen();
           }
           return FutureBuilder<String?>(
             future: userService.getUserRole(user.uid),
@@ -164,6 +169,49 @@ class AuthWrapper extends StatelessWidget {
               final role = roleSnapshot.data;
               if (role == 'admin') {
                 return const AdminDashboardScreen();
+              }
+              if (role == 'admin_sst') {
+                // Obtener institución del admin y validar estado
+                return FutureBuilder<String?>(
+                  future: userService.getUserInstitutionId(user.uid),
+                  builder: (context, instIdSnap) {
+                    if (instIdSnap.connectionState == ConnectionState.waiting) {
+                      return const Scaffold(
+                        body: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    final institutionId = instIdSnap.data;
+                    if (institutionId == null) {
+                      // Sin institución asignada, volver al login
+                      FirebaseAuth.instance.signOut();
+                      return const LoginScreen();
+                    }
+                    final institutionService = InstitutionService();
+                    return StreamBuilder<Institution?>(
+                      stream: institutionService.streamInstitution(institutionId),
+                      builder: (context, instSnap) {
+                        if (instSnap.connectionState == ConnectionState.waiting) {
+                          return const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          );
+                        }
+                        final institution = instSnap.data;
+                        if (institution == null) {
+                          // Institución no encontrada
+                          return VerificationPendingScreen();
+                        }
+                        if (institution.status == InstitutionStatus.pending) {
+                          return VerificationPendingScreen();
+                        }
+                        if (institution.status == InstitutionStatus.active) {
+                          return const AdminDashboardScreen();
+                        }
+                        // rejected u otros estados => pantalla informativa
+                        return VerificationPendingScreen();
+                      },
+                    );
+                  },
+                );
               }
               if (role == 'user') {
                 return const UserDashboardScreen();

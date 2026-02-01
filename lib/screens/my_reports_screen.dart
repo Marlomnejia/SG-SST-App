@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'report_details_screen.dart'; // Import the details screen
+import 'report_details_screen.dart';
+import '../services/user_service.dart';
 
 class MyReportsScreen extends StatefulWidget {
   const MyReportsScreen({Key? key}) : super(key: key);
@@ -12,20 +13,57 @@ class MyReportsScreen extends StatefulWidget {
 }
 
 class _MyReportsScreenState extends State<MyReportsScreen> {
-  late Stream<QuerySnapshot> _reportsStream;
+  final UserService _userService = UserService();
+  Stream<QuerySnapshot>? _reportsStream;
   String? _userId;
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _userId = FirebaseAuth.instance.currentUser?.uid;
+    _loadUserReports();
+  }
 
-    if (_userId != null) {
-      _reportsStream = FirebaseFirestore.instance
-          .collection('eventos')
-          .where('reportadoPor_uid', isEqualTo: _userId)
-          .orderBy('fechaReporte', descending: true)
-          .snapshots();
+  Future<void> _loadUserReports() async {
+    try {
+      _userId = FirebaseAuth.instance.currentUser?.uid;
+      if (_userId == null) {
+        setState(() {
+          _error = 'No se pudo identificar al usuario.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Obtener institutionId del usuario para cumplir con reglas de seguridad
+      final institutionId = await _userService.getUserInstitutionId(_userId!);
+      
+      // Consulta con ambos filtros para cumplir con las reglas de Firestore
+      if (institutionId != null) {
+        _reportsStream = FirebaseFirestore.instance
+            .collection('eventos')
+            .where('institutionId', isEqualTo: institutionId)
+            .where('reportadoPor_uid', isEqualTo: _userId)
+            .orderBy('fechaReporte', descending: true)
+            .snapshots();
+      } else {
+        // Fallback: solo por uid (para usuarios sin institución)
+        _reportsStream = FirebaseFirestore.instance
+            .collection('eventos')
+            .where('reportadoPor_uid', isEqualTo: _userId)
+            .orderBy('fechaReporte', descending: true)
+            .snapshots();
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Error al cargar los reportes: $e';
+        _isLoading = false;
+      });
     }
   }
 
@@ -60,89 +98,146 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
       appBar: AppBar(
         title: const Text('Mis Reportes Enviados'),
       ),
-      body: _userId == null
-          ? const Center(child: Text('No se pudo identificar al usuario.'))
-          : StreamBuilder<QuerySnapshot>(
-              stream: _reportsStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Error al cargar los reportes.'));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(
-                    child: Text('Aún no has enviado reportes.'),
-                  );
-                }
+      body: _buildBody(scheme),
+    );
+  }
 
-                final reports = snapshot.data!.docs;
+  Widget _buildBody(ColorScheme scheme) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.all(8.0),
-                  itemCount: reports.length,
-                  itemBuilder: (context, index) {
-                    final report = reports[index];
-                    final data = report.data() as Map<String, dynamic>;
-                    final tipo = data['tipo'] ?? 'Incidente';
-                    final descripcion = data['descripcion'] ?? 'Sin descripción';
-                    final estado = data['estado'] ?? 'Desconocido';
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 48, color: scheme.error),
+              const SizedBox(height: 16),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _isLoading = true;
+                    _error = null;
+                  });
+                  _loadUserReports();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-                    DateTime? fecha;
-                    final fechaData = data['fechaReporte'];
-                    if (fechaData is Timestamp) {
-                      fecha = fechaData.toDate();
-                    }
+    if (_reportsStream == null) {
+      return const Center(child: Text('No se pudo cargar los reportes.'));
+    }
 
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 8.0),
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: ListTile(
-                        leading: Icon(
-                          tipo == 'Accidente' ? Icons.warning : Icons.report_problem,
-                          color: tipo == 'Accidente' ? scheme.error : scheme.tertiary,
-                          size: 40,
-                        ),
-                        title: Text(
-                          descripcion,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          fecha != null
-                              ? DateFormat('dd/MM/yyyy, hh:mm a').format(fecha)
-                              : 'Fecha no disponible',
-                        ),
-                        trailing: Chip(
-                          label: Text(
-                            estado,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: _getStatusTextColor(estado, scheme),
-                            ),
-                          ),
-                          backgroundColor: _getStatusColor(estado, scheme),
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        ),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ReportDetailsScreen(documentId: report.id),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                );
-              },
+    return StreamBuilder<QuerySnapshot>(
+      stream: _reportsStream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Error: ${snapshot.error}'),
             ),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.inbox_outlined,
+                  size: 64,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Aún no has enviado reportes.',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final reports = snapshot.data!.docs;
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8.0),
+          itemCount: reports.length,
+          itemBuilder: (context, index) {
+            final report = reports[index];
+            final data = report.data() as Map<String, dynamic>;
+            final tipo = data['tipo'] ?? 'Incidente';
+            final descripcion = data['descripcion'] ?? 'Sin descripción';
+            final estado = data['estado'] ?? 'Desconocido';
+
+            DateTime? fecha;
+            final fechaData = data['fechaReporte'];
+            if (fechaData is Timestamp) {
+              fecha = fechaData.toDate();
+            }
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8.0),
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: ListTile(
+                leading: Icon(
+                  tipo == 'Accidente' ? Icons.warning : Icons.report_problem,
+                  color: tipo == 'Accidente' ? scheme.error : scheme.tertiary,
+                  size: 40,
+                ),
+                title: Text(
+                  descripcion,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  fecha != null
+                      ? DateFormat('dd/MM/yyyy, hh:mm a').format(fecha)
+                      : 'Fecha no disponible',
+                ),
+                trailing: Chip(
+                  label: Text(
+                    estado,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: _getStatusTextColor(estado, scheme),
+                    ),
+                  ),
+                  backgroundColor: _getStatusColor(estado, scheme),
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReportDetailsScreen(documentId: report.id),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

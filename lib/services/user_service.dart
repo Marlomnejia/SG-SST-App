@@ -17,20 +17,96 @@ class UserService {
     return data['role'] as String?;
   }
 
+  Future<String?> getUserInstitutionId(String uid) async {
+    final doc = await _firestore.collection('users').doc(uid).get();
+    if (!doc.exists) {
+      return null;
+    }
+    final data = doc.data() as Map<String, dynamic>;
+    return data['institutionId'] as String?;
+  }
+
+  Future<Map<String, dynamic>?> getUserData(String uid) async {
+    final doc = await _firestore.collection('users').doc(uid).get();
+    if (!doc.exists) {
+      return null;
+    }
+    return doc.data();
+  }
+
+  /// Crea perfil de usuario estándar (sin institución asignada inicialmente)
   Future<void> createUserProfile(User user, {String role = 'user'}) async {
     await _firestore.collection('users').doc(user.uid).set({
       'email': user.email,
       'displayName': user.displayName ?? _fallbackName(user.email),
       'photoUrl': user.photoURL,
       'jobTitle': '',
-      'institution': '',
+      'institutionId': null, // Referencia a institutions collection
       'campus': '',
       'phone': '',
       'notificationsEnabled': true,
       'fcmTokens': [],
       'role': role,
       'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  /// Crea perfil de administrador de institución
+  Future<void> createInstitutionAdminProfile({
+    required String uid,
+    required String email,
+    required String? displayName,
+    required String? photoUrl,
+    required String institutionId,
+  }) async {
+    await _firestore.collection('users').doc(uid).set({
+      'email': email,
+      'displayName': displayName ?? _fallbackName(email),
+      'photoUrl': photoUrl,
+      'jobTitle': 'Administrador SG-SST',
+      'institutionId': institutionId,
+      'campus': '',
+      'phone': '',
+      'notificationsEnabled': true,
+      'fcmTokens': [],
+      'role': 'admin_sst', // Nuevo rol para admin de institución
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Crea perfil de usuario vinculado a una institución
+  Future<void> createUserWithInstitution({
+    required String uid,
+    required String email,
+    required String? displayName,
+    required String? photoUrl,
+    required String institutionId,
+    String role = 'user',
+  }) async {
+    await _firestore.collection('users').doc(uid).set({
+      'email': email,
+      'displayName': displayName ?? _fallbackName(email),
+      'photoUrl': photoUrl,
+      'jobTitle': '',
+      'institutionId': institutionId,
+      'campus': '',
+      'phone': '',
+      'notificationsEnabled': true,
+      'fcmTokens': [],
+      'role': role,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Vincula un usuario existente a una institución mediante código de invitación
+  Future<void> linkUserToInstitution(String uid, String institutionId) async {
+    await _firestore.collection('users').doc(uid).update({
+      'institutionId': institutionId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
@@ -71,6 +147,23 @@ class UserService {
       },
       SetOptions(merge: true),
     );
+  }
+
+  /// Obtiene usuarios de una institución específica
+  Stream<QuerySnapshot> streamUsersByInstitution(String institutionId) {
+    return _firestore
+        .collection('users')
+        .where('institutionId', isEqualTo: institutionId)
+        .snapshots();
+  }
+
+  /// Verifica si el usuario tiene una institución asignada
+  Future<bool> hasInstitution(String uid) async {
+    final doc = await _firestore.collection('users').doc(uid).get();
+    if (!doc.exists) return false;
+    final data = doc.data() as Map<String, dynamic>;
+    final institutionId = data['institutionId'];
+    return institutionId != null && institutionId.toString().isNotEmpty;
   }
 
   String _fallbackName(String? email) {

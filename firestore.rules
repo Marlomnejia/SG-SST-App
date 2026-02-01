@@ -1,70 +1,199 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
+    
+    // Función helper para verificar autenticación
+    function isAuthenticated() {
       return request.auth != null;
     }
-
-    function isAdmin() {
-      return signedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid))
-          .data.role == 'admin';
+    
+    // Función helper para obtener datos del usuario
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    // Función helper para verificar rol
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+    
+    // Función helper para verificar institución
+    function belongsToInstitution(institutionId) {
+      return isAuthenticated() && getUserData().institutionId == institutionId;
     }
 
+    // Datos de institución
+    function getInstitutionData(institutionId) {
+      return get(/databases/$(database)/documents/institutions/$(institutionId)).data;
+    }
+
+    // Estado de institución activa (compat: usa status o isActive)
+    function isInstitutionActive(institutionId) {
+      let inst = getInstitutionData(institutionId);
+      return inst != null && (inst.status == 'active' || inst.isActive == true);
+    }
+    
+    // Función helper para verificar si es admin de la institución
+    function isInstitutionAdmin(institutionId) {
+      let userData = getUserData();
+      return userData.role == 'admin_sst' && userData.institutionId == institutionId;
+    }
+    
+    // Super admin del sistema
+    function isSuperAdmin() {
+      return hasRole('admin');
+    }
+    
+    // Admin de institución
+    function isAdminSst() {
+      return hasRole('admin_sst');
+    }
+
+    // Colección de instituciones
+    match /institutions/{institutionId} {
+      // Lectura: usuarios autenticados de la misma institución o super admin
+      allow read: if isAuthenticated() && (
+        belongsToInstitution(institutionId) || 
+        isSuperAdmin()
+      );
+      
+      // Crear: cualquier usuario autenticado (para registro inicial)
+      allow create: if isAuthenticated();
+      
+      // Actualizar: solo admin de la institución o super admin
+      allow update: if isInstitutionAdmin(institutionId) || isSuperAdmin();
+      
+      // Eliminar: solo super admin
+      allow delete: if isSuperAdmin();
+    }
+
+    // Colección de usuarios
     match /users/{userId} {
-      allow read: if signedIn() && (userId == request.auth.uid || isAdmin());
-      allow create: if signedIn() &&
-        ((userId == request.auth.uid && request.resource.data.role == 'user') ||
-         isAdmin());
-      allow update: if signedIn() &&
-        (isAdmin() ||
-         (userId == request.auth.uid &&
-          request.resource.data.role == resource.data.role));
-      allow delete: if isAdmin();
+      // Lectura: el propio usuario, admin de su institución, o super admin
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        (isAdminSst() && resource.data.institutionId == getUserData().institutionId)
+      );
+      
+      // Crear: usuario autenticado creando su propio perfil
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Actualizar: el propio usuario o admins
+      allow update: if isAuthenticated() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        (isAdminSst() && resource.data.institutionId == getUserData().institutionId)
+      );
+      
+      // Eliminar: solo super admin
+      allow delete: if isSuperAdmin();
     }
 
+    // Colección de eventos - filtrado por institución
     match /eventos/{eventId} {
-      allow create: if signedIn() &&
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() ||
+        resource.data.institutionId == getUserData().institutionId ||
+        resource.data.reportadoPor_uid == request.auth.uid
+      );
+      
+      // Crear solo si la institución del usuario está activa
+      allow create: if isAuthenticated() &&
+        isInstitutionActive(getUserData().institutionId) &&
         request.resource.data.reportadoPor_uid == request.auth.uid;
-      allow read: if signedIn() &&
-        (resource.data.reportadoPor_uid == request.auth.uid || isAdmin());
-      allow update: if signedIn() &&
-        (resource.data.reportadoPor_uid == request.auth.uid || isAdmin());
-      allow delete: if isAdmin();
+      
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isInstitutionAdmin(resource.data.institutionId) && isInstitutionActive(resource.data.institutionId)) ||
+        resource.data.reportadoPor_uid == request.auth.uid
+      );
+      
+      allow delete: if isSuperAdmin();
     }
 
-    match /planesDeAccion/{planId} {
-      allow read: if isAdmin();
-      allow create, update, delete: if isAdmin();
-    }
-
+    // Colección de capacitaciones - filtrado por institución
     match /trainings/{trainingId} {
-      allow read: if isAdmin() || resource.data.published == true;
-      allow create, update, delete: if isAdmin();
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() ||
+        resource.data.institutionId == getUserData().institutionId ||
+        resource.data.published == true
+      );
+      
+      allow create: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isAdminSst() && request.resource.data.institutionId == getUserData().institutionId && isInstitutionActive(getUserData().institutionId))
+      );
+      
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isInstitutionAdmin(resource.data.institutionId) && isInstitutionActive(resource.data.institutionId))
+      );
+      
+      allow delete: if isSuperAdmin() || (isInstitutionAdmin(resource.data.institutionId) && isInstitutionActive(resource.data.institutionId));
     }
 
+    // Colección de asignaciones
     match /assignments/{assignmentId} {
-      allow read: if signedIn() &&
-        (resource.data.target == 'all' ||
-         resource.data.target == request.auth.uid ||
-         isAdmin());
-      allow create, update, delete: if isAdmin();
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() ||
+        isAdminSst() ||
+        resource.data.target == 'all' ||
+        resource.data.target == request.auth.uid
+      );
+      
+      allow create: if isAuthenticated() && (
+        isSuperAdmin() || (isAdminSst() && isInstitutionActive(getUserData().institutionId))
+      );
+      
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() || (isAdminSst() && isInstitutionActive(getUserData().institutionId))
+      );
+      
+      allow delete: if isSuperAdmin() || (isAdminSst() && isInstitutionActive(getUserData().institutionId));
     }
 
+    // Colección de intentos de capacitación
     match /trainingAttempts/{attemptId} {
-      allow create: if signedIn() &&
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() ||
+        isAdminSst() ||
+        resource.data.userId == request.auth.uid
+      );
+      
+      allow create: if isAuthenticated() && 
         request.resource.data.userId == request.auth.uid;
-      allow read: if signedIn() &&
-        (resource.data.userId == request.auth.uid || isAdmin());
-      allow update, delete: if isAdmin();
+      
+      allow update, delete: if isSuperAdmin();
     }
 
-    match /certificates/{certificateId} {
-      allow create: if signedIn() &&
-        (request.resource.data.userId == request.auth.uid || isAdmin());
-      allow read: if signedIn() &&
-        (resource.data.userId == request.auth.uid || isAdmin());
-      allow update, delete: if isAdmin();
+    // Colección de certificados
+    match /certificates/{certId} {
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() ||
+        isAdminSst() ||
+        resource.data.userId == request.auth.uid
+      );
+      
+      allow create: if isAuthenticated() && isInstitutionActive(getUserData().institutionId);
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Colección de planes de acción
+    match /planesDeAccion/{planId} {
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() || isAdminSst()
+      );
+      
+      allow create: if isAuthenticated() && (
+        isSuperAdmin() || (isAdminSst() && isInstitutionActive(getUserData().institutionId))
+      );
+      
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() || (isAdminSst() && isInstitutionActive(getUserData().institutionId))
+      );
+      
+      allow delete: if isSuperAdmin();
     }
   }
 }

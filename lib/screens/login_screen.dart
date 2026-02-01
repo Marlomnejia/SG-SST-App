@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
+import '../services/institution_service.dart';
 import 'user_dashboard_screen.dart';
 import 'admin_dashboard_screen.dart';
-import 'register_screen.dart';
 import 'reset_password_screen.dart';
+import 'join_institution_screen.dart';
+import 'register_institution_screen.dart';
+import 'social_onboarding_screen.dart';
+import 'verification_pending_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -81,8 +85,28 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user == null) {
         return;
       }
-      await _ensureProfile(user);
+      // Usuario existente - continuar con login normal
       await _routeByRole(user);
+    } on SocialUserNotRegisteredException catch (e) {
+      // Usuario nuevo de Google - navegar a onboarding
+      if (mounted) {
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SocialOnboardingScreen(
+              socialData: SocialUserData.fromException(e),
+            ),
+          ),
+        );
+        
+        // Si completó el registro exitosamente, hacer login
+        if (result == true && mounted) {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            await _routeByRole(user);
+          }
+        }
+      }
     } on FirebaseAuthException catch (e) {
       _showMessage(_mapAuthError(e.code));
     } finally {
@@ -94,10 +118,48 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _ensureProfile(User user) async {
-    final role = await _userService.getUserRole(user.uid);
-    if (role == null) {
-      await _userService.createUserProfile(user);
+  Future<void> _loginWithMicrosoft() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final user = await _authService.signInWithMicrosoft();
+      if (user == null) {
+        return;
+      }
+      // Usuario existente - continuar con login normal
+      await _routeByRole(user);
+    } on SocialUserNotRegisteredException catch (e) {
+      // Usuario nuevo de Microsoft - navegar a onboarding
+      if (mounted) {
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SocialOnboardingScreen(
+              socialData: SocialUserData.fromException(e),
+            ),
+          ),
+        );
+        
+        // Si completó el registro exitosamente, hacer login
+        if (result == true && mounted) {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            await _routeByRole(user);
+          }
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      _showMessage(_mapAuthError(e.code));
+    } catch (e) {
+      _showMessage('Error al iniciar sesión con Microsoft.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -111,11 +173,44 @@ class _LoginScreenState extends State<LoginScreen> {
       await _authService.signOut();
       return;
     }
+    // Super admin
     if (role == 'admin') {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
       );
-    } else {
+      return;
+    }
+    // Admin de institución: validar estado
+    if (role == 'admin_sst') {
+      final institutionId = await _userService.getUserInstitutionId(user.uid);
+      if (institutionId == null) {
+        await _authService.signOut();
+        _showMessage('No se encontró tu institución.');
+        return;
+      }
+      final institutionService = InstitutionService();
+      final inst = await institutionService.getInstitutionById(institutionId);
+      if (inst == null || inst.status == 'pending') {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => VerificationPendingScreen()),
+        );
+        return;
+      }
+      if (inst.status == 'active') {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+        );
+        return;
+      }
+      // rejected u otros estados
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => VerificationPendingScreen()),
+      );
+      return;
+    }
+    // user, employee u otros roles van al dashboard de usuario
+    {
+      // user, employee u otros roles van al dashboard de usuario
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const UserDashboardScreen()),
       );
@@ -335,35 +430,76 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed: _isLoading ? null : _loginWithGoogle,
-                            icon: Container(
-                              height: 24,
-                              width: 24,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: scheme.outlineVariant,
+                          // Botones de redes sociales
+                          Row(
+                            children: [
+                              // Botón de Google
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoading ? null : _loginWithGoogle,
+                                  icon: Container(
+                                    height: 20,
+                                    width: 20,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2.0),
+                                      child: Image.asset(
+                                        'assets/google-g.png',
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  ),
+                                  label: const Text('Google'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: scheme.onSurface,
+                                    side: BorderSide(color: scheme.outlineVariant),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(3.0),
-                                child: Image.asset(
-                                  'assets/google-g.png',
-                                  fit: BoxFit.contain,
+                              const SizedBox(width: 12),
+                              // Botón de Microsoft
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: _isLoading ? null : _loginWithMicrosoft,
+                                  icon: Container(
+                                    height: 20,
+                                    width: 20,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(2.0),
+                                      child: Image.asset(
+                                        'assets/microsoft-logo.jpg',
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.window,
+                                          size: 16,
+                                          color: Color(0xFF00A4EF),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  label: const Text('Microsoft'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: scheme.onSurface,
+                                    side: BorderSide(color: scheme.outlineVariant),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 12,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                            label: const Text('Continuar con Google'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: scheme.onSurface,
-                              side: BorderSide(color: scheme.outlineVariant),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                            ),
+                            ],
                           ),
                           const SizedBox(height: 8),
                           TextButton(
@@ -381,6 +517,40 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: const Text('Olvide mi contrasena'),
                           ),
                           const Divider(height: 32),
+                          Text(
+                            '¿No tienes cuenta?',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Botón principal: Unirse con código
+                          OutlinedButton.icon(
+                            onPressed: _isLoading
+                                ? null
+                                : () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const JoinInstitutionScreen(),
+                                      ),
+                                    );
+                                  },
+                            icon: const Icon(Icons.vpn_key_outlined),
+                            label: const Text('Unirme con código de invitación'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: scheme.primary,
+                              side: BorderSide(color: scheme.primary),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Botón secundario: Registrar institución
                           TextButton(
                             onPressed: _isLoading
                                 ? null
@@ -389,11 +559,11 @@ class _LoginScreenState extends State<LoginScreen> {
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) =>
-                                            const RegisterScreen(),
+                                            const RegisterInstitutionScreen(),
                                       ),
                                     );
                                   },
-                            child: const Text('Crear cuenta nueva'),
+                            child: const Text('Registrar mi institución'),
                           ),
                         ],
                       ),
