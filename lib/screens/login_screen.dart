@@ -5,8 +5,9 @@ import '../services/user_service.dart';
 import '../services/institution_service.dart';
 import 'user_dashboard_screen.dart';
 import 'admin_dashboard_screen.dart';
+import 'super_admin_dashboard_screen.dart';
 import 'reset_password_screen.dart';
-import 'join_institution_screen.dart';
+import 'register_screen.dart';
 import 'register_institution_screen.dart';
 import 'social_onboarding_screen.dart';
 import 'verification_pending_screen.dart';
@@ -173,10 +174,10 @@ class _LoginScreenState extends State<LoginScreen> {
       await _authService.signOut();
       return;
     }
-    // Super admin
+    // Super admin (rol global del sistema)
     if (role == 'admin') {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
+        MaterialPageRoute(builder: (_) => const SuperAdminDashboardScreen()),
       );
       return;
     }
@@ -430,6 +431,36 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
+                          // Texto de ayuda para empleados invitados
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.primaryContainer.withOpacity(0.3),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 18,
+                                  color: scheme.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Si tienes invitación, inicia sesión con el correo al que te llegó.',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           // Botones de redes sociales
                           Row(
                             children: [
@@ -516,16 +547,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   },
                             child: const Text('Olvide mi contrasena'),
                           ),
-                          const Divider(height: 32),
-                          Text(
-                            '¿No tienes cuenta?',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Botón principal: Unirse con código
+                          const SizedBox(height: 8),
+                          // Botón para registrarse con email/password (empleados invitados)
                           OutlinedButton.icon(
                             onPressed: _isLoading
                                 ? null
@@ -534,23 +557,31 @@ class _LoginScreenState extends State<LoginScreen> {
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) =>
-                                            const JoinInstitutionScreen(),
+                                            const RegisterScreen(),
                                       ),
                                     );
                                   },
-                            icon: const Icon(Icons.vpn_key_outlined),
-                            label: const Text('Unirme con código de invitación'),
+                            icon: const Icon(Icons.person_add_outlined),
+                            label: const Text('Registrarme con email'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: scheme.primary,
-                              side: BorderSide(color: scheme.primary),
+                              side: BorderSide(color: scheme.outline),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 12,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          // Botón secundario: Registrar institución
+                          const Divider(height: 32),
+                          Text(
+                            '¿Eres administrador de una institución?',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Botón: Registrar institución
                           TextButton(
                             onPressed: _isLoading
                                 ? null

@@ -9,6 +9,7 @@ import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/user_dashboard_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
+import 'screens/super_admin_dashboard_screen.dart';
 import 'screens/verification_pending_screen.dart';
 import 'screens/verify_email_screen.dart';
 import 'services/institution_service.dart';
@@ -167,8 +168,9 @@ class AuthWrapper extends StatelessWidget {
                 );
               }
               final role = roleSnapshot.data;
+              // Super admin del sistema
               if (role == 'admin') {
-                return const AdminDashboardScreen();
+                return const SuperAdminDashboardScreen();
               }
               if (role == 'admin_sst') {
                 // Obtener institución del admin y validar estado
@@ -213,7 +215,8 @@ class AuthWrapper extends StatelessWidget {
                   },
                 );
               }
-              if (role == 'user') {
+              // Usuario normal o empleado
+              if (role == 'user' || role == 'employee') {
                 return const UserDashboardScreen();
               }
               return const LoginScreen();

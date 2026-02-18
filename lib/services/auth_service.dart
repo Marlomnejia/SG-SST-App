@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/institution.dart';
+import '../models/invitation.dart';
 import 'institution_service.dart';
+import 'invitation_service.dart';
 import 'user_service.dart';
 import 'document_upload_service.dart';
 
@@ -93,6 +95,8 @@ class AuthService {
     required String password,
     required String institutionName,
     required String institutionNit,
+    required String institutionDepartment,
+    required String institutionCity,
     required String institutionAddress,
     required InstitutionType institutionType,
     required String institutionPhone,
@@ -151,6 +155,8 @@ class AuthService {
       institutionId = await _institutionService.createInstitution(
         name: institutionName,
         nit: institutionNit,
+        department: institutionDepartment,
+        city: institutionCity,
         address: institutionAddress,
         type: institutionType,
         institutionPhone: institutionPhone,
@@ -354,7 +360,7 @@ class AuthService {
     }
   }
 
-  /// Completa el registro de un usuario social uniéndolo a una institución
+  /// Completa el registro de un usuario social uniéndolo a una institución (código)
   Future<User?> completeSocialRegistrationWithInviteCode({
     required User socialUser,
     required String inviteCode,
@@ -391,12 +397,45 @@ class AuthService {
     return socialUser;
   }
 
+  /// Completa el registro de un usuario social usando una invitación por email
+  Future<User?> completeSocialRegistrationWithInvitation({
+    required User socialUser,
+    required Invitation invitation,
+    String? jobTitle,
+  }) async {
+    final invitationService = InvitationService();
+
+    // Crear perfil en Firestore con los datos del usuario social
+    await _userService.createUserWithInstitution(
+      uid: socialUser.uid,
+      email: socialUser.email ?? '',
+      displayName: socialUser.displayName,
+      photoUrl: socialUser.photoURL,
+      institutionId: invitation.institutionId,
+      role: invitation.role,
+    );
+
+    // Actualizar jobTitle si se proporcionó
+    if (jobTitle != null && jobTitle.isNotEmpty) {
+      await _userService.updateUserProfile(socialUser.uid, {
+        'jobTitle': jobTitle,
+      });
+    }
+
+    // Marcar la invitación como aceptada
+    await invitationService.acceptInvitation(invitation.id);
+
+    return socialUser;
+  }
+
   /// Registra una nueva institución con un administrador que viene de login social
   /// El usuario social ya está autenticado, solo necesita subir docs y crear Firestore
   Future<User?> registerInstitutionAdminWithSocialUser({
     required User socialUser,
     required String institutionName,
     required String institutionNit,
+    required String institutionDepartment,
+    required String institutionCity,
     required String institutionAddress,
     required InstitutionType institutionType,
     required String institutionPhone,
@@ -435,6 +474,8 @@ class AuthService {
       institutionId = await _institutionService.createInstitution(
         name: institutionName,
         nit: institutionNit,
+        department: institutionDepartment,
+        city: institutionCity,
         address: institutionAddress,
         type: institutionType,
         institutionPhone: institutionPhone,
@@ -488,6 +529,8 @@ class AuthService {
     required User googleUser,
     required String institutionName,
     required String institutionNit,
+    required String institutionDepartment,
+    required String institutionCity,
     required String institutionAddress,
     required InstitutionType institutionType,
     required String institutionPhone,
@@ -501,6 +544,8 @@ class AuthService {
       socialUser: googleUser,
       institutionName: institutionName,
       institutionNit: institutionNit,
+      institutionDepartment: institutionDepartment,
+      institutionCity: institutionCity,
       institutionAddress: institutionAddress,
       institutionType: institutionType,
       institutionPhone: institutionPhone,

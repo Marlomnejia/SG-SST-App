@@ -50,10 +50,12 @@ class InstitutionService {
   }
 
   /// Crea una nueva institución y retorna su ID
-  /// Acepta los nuevos campos: type, phones, email, documentsUrls
+  /// Acepta los nuevos campos: type, phones, email, documentsUrls, department, city
   Future<String> createInstitution({
     required String name,
     required String nit,
+    required String department,
+    required String city,
     required String address,
     required InstitutionType type,
     required String institutionPhone,
@@ -66,6 +68,8 @@ class InstitutionService {
     final docRef = await _firestore.collection(_collection).add({
       'name': name,
       'nit': nit,
+      'department': department,
+      'city': city,
       'address': address,
       'type': type.name,
       'institutionPhone': institutionPhone,
@@ -195,6 +199,40 @@ class InstitutionService {
         .count()
         .get();
     return snapshot.count ?? 0;
+  }
+
+  /// Stream de instituciones pendientes de aprobación (para super admin)
+  Stream<List<Institution>> streamPendingInstitutions() {
+    return _firestore
+        .collection(_collection)
+        .where('status', isEqualTo: 'pending')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Institution.fromFirestore(doc))
+            .toList());
+  }
+
+  /// Aprueba una institución (cambia status a 'active')
+  Future<void> approveInstitution(String institutionId) async {
+    await _firestore.collection(_collection).doc(institutionId).update({
+      'status': 'active',
+      'isActive': true,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Rechaza una institución (cambia status a 'rejected')
+  Future<void> rejectInstitution(String institutionId, {String? reason}) async {
+    final data = <String, dynamic>{
+      'status': 'rejected',
+      'isActive': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (reason != null && reason.isNotEmpty) {
+      data['rejectionReason'] = reason;
+    }
+    await _firestore.collection(_collection).doc(institutionId).update(data);
   }
 }
 

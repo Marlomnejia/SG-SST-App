@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -55,6 +56,13 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   // Documentos seleccionados
   final Map<DocumentType, SelectedFile> _selectedDocuments = {};
 
+  // Ubicación - Departamentos y Ciudades
+  List<Map<String, dynamic>> _departamentos = [];
+  List<String> _ciudades = [];
+  String? _selectedDepartment;
+  String? _selectedCity;
+  bool _isLoadingLocations = true;
+
   /// Indica si el registro viene de un proveedor social (Google/Microsoft)
   bool get _isSocialRegistration => widget.socialUserData != null;
 
@@ -81,10 +89,51 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLocations();
     if (widget.socialUserData != null) {
       _adminNameController.text = widget.socialUserData!.displayName;
       _emailController.text = widget.socialUserData!.email;
     }
+  }
+
+  Future<void> _loadLocations() async {
+    try {
+      final jsonString = await rootBundle.loadString(
+        'assets/json/ciudades-departamentos-colombia.json',
+      );
+      final data = json.decode(jsonString) as Map<String, dynamic>;
+      final departamentos = (data['departamentos'] as List<dynamic>)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _departamentos = departamentos;
+          _isLoadingLocations = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingLocations = false);
+        _showMessage('Error al cargar ubicaciones: $e');
+      }
+    }
+  }
+
+  void _onDepartmentChanged(String? value) {
+    setState(() {
+      _selectedDepartment = value;
+      _selectedCity = null;
+      if (value != null) {
+        final dept = _departamentos.firstWhere(
+          (d) => d['nombre'] == value,
+          orElse: () => {'ciudades': <String>[]},
+        );
+        _ciudades = List<String>.from(dept['ciudades'] ?? []);
+      } else {
+        _ciudades = [];
+      }
+    });
   }
 
   @override
@@ -222,6 +271,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           socialUser: widget.socialUserData!.user,
           institutionName: _institutionNameController.text.trim(),
           institutionNit: nit,
+          institutionDepartment: _selectedDepartment!,
+          institutionCity: _selectedCity!,
           institutionAddress: _addressController.text.trim(),
           institutionType: _institutionType,
           institutionPhone: _institutionPhoneController.text.trim(),
@@ -237,6 +288,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           password: _passwordController.text,
           institutionName: _institutionNameController.text.trim(),
           institutionNit: nit,
+          institutionDepartment: _selectedDepartment!,
+          institutionCity: _selectedCity!,
           institutionAddress: _addressController.text.trim(),
           institutionType: _institutionType,
           institutionPhone: _institutionPhoneController.text.trim(),
@@ -248,9 +301,26 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
       }
 
       if (mounted) {
-        // Navegar a la raíz para que AuthWrapper detecte el usuario
-        // y muestre VerifyEmailScreen (email no verificado)
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        final email = _emailController.text.trim();
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('¡Registro Exitoso!'),
+            content: Text(
+              'La institución ha sido registrada. Hemos enviado un correo de verificación a $email. Por favor revísalo (incluyendo la carpeta de Spam) antes de continuar.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Entendido'),
+              ),
+            ],
+          ),
+        );
+        if (mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        }
       }
     } on FirebaseAuthException catch (e) {
       _showMessage(_mapAuthError(e.code));
@@ -439,13 +509,73 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             },
           ),
           const SizedBox(height: 16),
+          // Dropdown de Departamento
+          _isLoadingLocations
+              ? const Center(child: CircularProgressIndicator())
+              : DropdownButtonFormField<String>(
+                  value: _selectedDepartment,
+                  decoration: const InputDecoration(
+                    labelText: 'Departamento *',
+                    prefixIcon: Icon(Icons.map_outlined),
+                  ),
+                  hint: const Text('Selecciona un departamento'),
+                  isExpanded: true,
+                  items: _departamentos.map((dep) {
+                    return DropdownMenuItem<String>(
+                      value: dep['nombre'] as String,
+                      child: Text(dep['nombre'] as String),
+                    );
+                  }).toList(),
+                  onChanged: _onDepartmentChanged,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Selecciona un departamento.';
+                    }
+                    return null;
+                  },
+                ),
+          const SizedBox(height: 16),
+          // Dropdown de Ciudad
+          DropdownButtonFormField<String>(
+            value: _selectedCity,
+            decoration: const InputDecoration(
+              labelText: 'Ciudad *',
+              prefixIcon: Icon(Icons.location_city_outlined),
+            ),
+            hint: Text(
+              _selectedDepartment == null
+                  ? 'Primero selecciona un departamento'
+                  : 'Selecciona una ciudad',
+            ),
+            isExpanded: true,
+            items: _ciudades.map((ciudad) {
+              return DropdownMenuItem<String>(
+                value: ciudad,
+                child: Text(ciudad),
+              );
+            }).toList(),
+            onChanged: _selectedDepartment == null
+                ? null
+                : (value) {
+                    setState(() {
+                      _selectedCity = value;
+                    });
+                  },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Selecciona una ciudad.';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
           TextFormField(
             controller: _addressController,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
               labelText: 'Dirección *',
               prefixIcon: Icon(Icons.location_on_outlined),
-              hintText: 'Ej: Calle 10 # 20-30, Ciudad',
+              hintText: 'Ej: Calle 10 # 20-30',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {

@@ -195,5 +195,32 @@ service cloud.firestore {
       
       allow delete: if isSuperAdmin();
     }
+
+    // Colección de invitaciones - Lista blanca para registro de empleados
+    match /invitations/{invitationId} {
+      // Lectura: cualquier usuario autenticado puede buscar su propia invitación por email
+      allow read: if isAuthenticated();
+      
+      // Crear: solo admins de institución activa o super admin
+      allow create: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (isAdminSst() && isInstitutionActive(getUserData().institutionId))
+      );
+      
+      // Actualizar: admin de la institución, super admin, o el usuario aceptando su propia invitación
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isAdminSst() && resource.data.institutionId == getUserData().institutionId) ||
+        // Permitir que el usuario actualice status a 'accepted' si es su email
+        (request.resource.data.status == 'accepted' && 
+         resource.data.email == request.auth.token.email)
+      );
+      
+      // Eliminar: solo admin de la institución o super admin
+      allow delete: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isAdminSst() && resource.data.institutionId == getUserData().institutionId)
+      );
+    }
   }
 }

@@ -128,6 +128,13 @@ class Institution {
   final String id;
   final String name;
   final String nit;
+
+  /// Departamento de Colombia
+  final String department;
+
+  /// Ciudad/Municipio
+  final String city;
+
   final String address;
 
   /// Tipo de institución: pública o privada
@@ -164,6 +171,8 @@ class Institution {
     required this.id,
     required this.name,
     required this.nit,
+    this.department = '',
+    this.city = '',
     required this.address,
     this.type = InstitutionType.private,
     this.status = InstitutionStatus.pending,
@@ -184,6 +193,8 @@ class Institution {
       id: doc.id,
       name: data['name'] ?? '',
       nit: data['nit'] ?? '',
+      department: data['department'] ?? '',
+      city: data['city'] ?? '',
       address: data['address'] ?? '',
       type: InstitutionType.fromString(data['type'] as String?),
       status: InstitutionStatus.fromString(data['status'] as String?),
@@ -204,6 +215,8 @@ class Institution {
     return {
       'name': name,
       'nit': nit,
+      'department': department,
+      'city': city,
       'address': address,
       'type': type.name,
       'status': status.name,
@@ -223,6 +236,8 @@ class Institution {
     String? id,
     String? name,
     String? nit,
+    String? department,
+    String? city,
     String? address,
     InstitutionType? type,
     InstitutionStatus? status,
@@ -240,6 +255,8 @@ class Institution {
       id: id ?? this.id,
       name: name ?? this.name,
       nit: nit ?? this.nit,
+      department: department ?? this.department,
+      city: city ?? this.city,
       address: address ?? this.address,
       type: type ?? this.type,
       status: status ?? this.status,

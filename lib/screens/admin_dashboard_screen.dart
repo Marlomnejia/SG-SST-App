@@ -3,6 +3,7 @@ import '../services/auth_service.dart';
 import 'login_screen.dart';
 import 'incident_management_screen.dart';
 import 'training_admin_screen.dart';
+import 'invite_employee_screen.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -156,6 +157,25 @@ class AdminDashboardScreen extends StatelessWidget {
                           MaterialPageRoute(
                             builder: (context) =>
                                 const ReportGenerationScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _buildManagementTile(
+                      context,
+                      icon: Icons.person_add_alt_1,
+                      title: 'Invitar Empleados',
+                      subtitle: 'Enviar invitaciones por correo',
+                      color: scheme.secondary,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const InviteEmployeeScreen(),
                           ),
                         );
                       },

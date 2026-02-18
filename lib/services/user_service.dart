@@ -172,4 +172,56 @@ class UserService {
     }
     return email.split('@').first;
   }
+
+  /// Obtiene los datos del usuario actual autenticado
+  Future<CurrentUserData?> getCurrentUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final data = await getUserData(user.uid);
+    if (data == null) return null;
+
+    return CurrentUserData(
+      uid: user.uid,
+      email: user.email ?? '',
+      displayName: data['displayName'] as String?,
+      photoUrl: data['photoUrl'] as String?,
+      institutionId: data['institutionId'] as String?,
+      role: data['role'] as String?,
+    );
+  }
+
+  /// Obtiene el nombre de una institución por su ID
+  Future<String?> getInstitutionName(String institutionId) async {
+    try {
+      final doc = await _firestore
+          .collection('institutions')
+          .doc(institutionId)
+          .get();
+      if (!doc.exists) return null;
+      final data = doc.data();
+      return data?['name'] as String?;
+    } catch (e) {
+      return null;
+    }
+  }
+}
+
+/// Datos del usuario actual
+class CurrentUserData {
+  final String uid;
+  final String email;
+  final String? displayName;
+  final String? photoUrl;
+  final String? institutionId;
+  final String? role;
+
+  CurrentUserData({
+    required this.uid,
+    required this.email,
+    this.displayName,
+    this.photoUrl,
+    this.institutionId,
+    this.role,
+  });
 }
