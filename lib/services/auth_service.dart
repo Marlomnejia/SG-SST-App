@@ -19,10 +19,7 @@ class AuthException implements Exception {
 }
 
 /// Tipos de proveedores de autenticación social
-enum SocialAuthProvider {
-  google,
-  microsoft,
-}
+enum SocialAuthProvider { google, microsoft }
 
 /// Excepción genérica para usuarios de redes sociales que no están registrados
 /// Contiene los datos del proveedor para completar el registro
@@ -58,12 +55,17 @@ class SocialUserNotRegisteredException implements Exception {
 typedef GoogleUserNotRegisteredException = SocialUserNotRegisteredException;
 
 class AuthService {
+  static bool socialAuthFlowActive = false;
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final InstitutionService _institutionService = InstitutionService();
   final UserService _userService = UserService();
   final DocumentUploadService _documentService = DocumentUploadService();
 
-  Future<User?> signInWithEmailAndPassword(String email, String password) async {
+  Future<User?> signInWithEmailAndPassword(
+    String email,
+    String password,
+  ) async {
     try {
       UserCredential result = await _auth.signInWithEmailAndPassword(
         email: email,
@@ -75,7 +77,10 @@ class AuthService {
     }
   }
 
-  Future<User?> registerWithEmailAndPassword(String email, String password) async {
+  Future<User?> registerWithEmailAndPassword(
+    String email,
+    String password,
+  ) async {
     try {
       UserCredential result = await _auth.createUserWithEmailAndPassword(
         email: email,
@@ -202,8 +207,9 @@ class AuthService {
     String? displayName,
   }) async {
     // Verificar que el código de invitación sea válido
-    final institution =
-        await _institutionService.getInstitutionByInviteCode(inviteCode);
+    final institution = await _institutionService.getInstitutionByInviteCode(
+      inviteCode,
+    );
     if (institution == null) {
       throw AuthException(
         code: 'invalid-invite-code',
@@ -253,8 +259,9 @@ class AuthService {
 
   /// Vincula un usuario existente a una institución mediante código
   Future<void> joinInstitutionWithCode(String uid, String inviteCode) async {
-    final institution =
-        await _institutionService.getInstitutionByInviteCode(inviteCode);
+    final institution = await _institutionService.getInstitutionByInviteCode(
+      inviteCode,
+    );
     if (institution == null) {
       throw AuthException(
         code: 'invalid-invite-code',
@@ -290,8 +297,9 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      final UserCredential result =
-          await _auth.signInWithCredential(credential);
+      final UserCredential result = await _auth.signInWithCredential(
+        credential,
+      );
       final user = result.user;
 
       if (user == null) {
@@ -322,18 +330,19 @@ class AuthService {
   Future<User?> signInWithMicrosoft() async {
     try {
       final microsoftProvider = OAuthProvider('microsoft.com');
-      
+
       // Configurar scopes opcionales
       microsoftProvider.addScope('email');
       microsoftProvider.addScope('profile');
-      
+
       // Configurar parámetros opcionales (tenant para organizaciones)
       microsoftProvider.setCustomParameters({
         'prompt': 'select_account', // Siempre mostrar selector de cuenta
       });
 
-      final UserCredential result =
-          await _auth.signInWithProvider(microsoftProvider);
+      final UserCredential result = await _auth.signInWithProvider(
+        microsoftProvider,
+      );
       final user = result.user;
 
       if (user == null) {
@@ -367,8 +376,9 @@ class AuthService {
     String? jobTitle,
   }) async {
     // Validar código de invitación
-    final institution =
-        await _institutionService.getInstitutionByInviteCode(inviteCode);
+    final institution = await _institutionService.getInstitutionByInviteCode(
+      inviteCode,
+    );
     if (institution == null) {
       throw AuthException(
         code: 'invalid-invite-code',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../services/auth_service.dart';
 
 class VerificationPendingScreen extends StatelessWidget {
@@ -8,6 +9,7 @@ class VerificationPendingScreen extends StatelessWidget {
 
   Future<void> _signOut(BuildContext context) async {
     await _authService.signOut();
+    if (!context.mounted) return;
     if (Navigator.canPop(context)) {
       Navigator.popUntil(context, (route) => route.isFirst);
     }
@@ -18,9 +20,7 @@ class VerificationPendingScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Verificación en proceso'),
-      ),
+      appBar: AppBar(title: const Text('Verificacion en proceso')),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -33,7 +33,7 @@ class VerificationPendingScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withOpacity(0.3),
+                    color: scheme.primaryContainer.withValues(alpha: 0.3),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -44,11 +44,10 @@ class VerificationPendingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  '¡Tus documentos han sido enviados!',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                  'Tus documentos han sido enviados',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
@@ -58,20 +57,16 @@ class VerificationPendingScreen extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
+                    color: Colors.orange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: Colors.orange.withOpacity(0.3),
+                      color: Colors.orange.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.schedule,
-                        size: 18,
-                        color: Colors.orange[700],
-                      ),
+                      Icon(Icons.schedule, size: 18, color: Colors.orange[700]),
                       const SizedBox(width: 8),
                       Text(
                         'Validaremos tu solicitud en 24 horas',
@@ -85,20 +80,18 @@ class VerificationPendingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Tu institución ha sido registrada y está en proceso de verificación legal. Revisaremos los documentos que nos proporcionaste.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  'Tu institucion ha sido registrada y esta en proceso de verificacion legal. Revisaremos los documentos que nos proporcionaste.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Te notificaremos por correo electrónico cuando se active tu cuenta. Mientras tanto, podrás consultar el estado desde tu perfil.',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  'Te notificaremos por correo electronico cuando se active tu cuenta. Mientras tanto, podras consultar el estado desde tu perfil.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
@@ -107,7 +100,7 @@ class VerificationPendingScreen extends StatelessWidget {
                   child: FilledButton.icon(
                     onPressed: () => _signOut(context),
                     icon: const Icon(Icons.logout),
-                    label: const Text('Cerrar sesión'),
+                    label: const Text('Cerrar sesion'),
                   ),
                 ),
               ],

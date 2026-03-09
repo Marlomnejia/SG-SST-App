@@ -65,10 +65,7 @@ typedef GoogleUserData = SocialUserData;
 class SocialOnboardingScreen extends StatefulWidget {
   final SocialUserData socialData;
 
-  const SocialOnboardingScreen({
-    super.key,
-    required this.socialData,
-  });
+  const SocialOnboardingScreen({super.key, required this.socialData});
 
   @override
   State<SocialOnboardingScreen> createState() => _SocialOnboardingScreenState();
@@ -104,8 +101,9 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
     });
 
     try {
-      final invitation = await _invitationService
-          .findPendingInvitationByEmail(widget.socialData.email);
+      final invitation = await _invitationService.findPendingInvitationByEmail(
+        widget.socialData.email,
+      );
 
       setState(() {
         _foundInvitation = invitation;
@@ -152,9 +150,8 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => RegisterInstitutionScreen(
-          socialUserData: widget.socialData,
-        ),
+        builder: (context) =>
+            RegisterInstitutionScreen(socialUserData: widget.socialData),
       ),
     );
   }
@@ -171,11 +168,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        icon: const Icon(
-          Icons.check_circle,
-          color: Colors.green,
-          size: 64,
-        ),
+        icon: const Icon(Icons.check_circle, color: Colors.green, size: 64),
         title: Text(title),
         content: Text(message, textAlign: TextAlign.center),
         actions: [
@@ -192,9 +185,9 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -223,8 +216,8 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
                   Text(
                     '¡Hola, ${widget.socialData.displayName.split(' ').first}!',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
 
@@ -250,17 +243,17 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
           const SizedBox(height: 24),
           Text(
             'Buscando invitación...',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
           Text(
             widget.socialData.email,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: scheme.primary,
-                  fontWeight: FontWeight.w500,
-                ),
+              color: scheme.primary,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -272,9 +265,9 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
       children: [
         Text(
           '¡Tienes una invitación pendiente!',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 24),
@@ -283,9 +276,9 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.green.withOpacity(0.1),
+            color: Colors.green.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.green.withOpacity(0.3)),
+            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
           ),
           child: Column(
             children: [
@@ -293,17 +286,17 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
               const SizedBox(height: 12),
               Text(
                 _foundInvitation!.institutionName ?? 'Institución',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
               Text(
                 'Te ha invitado a unirte',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -354,9 +347,9 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: scheme.errorContainer.withOpacity(0.3),
+            color: scheme.errorContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: scheme.error.withOpacity(0.3)),
+            border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
           ),
           child: Column(
             children: [
@@ -365,17 +358,17 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
               Text(
                 'No tienes invitaciones vigentes',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: scheme.error,
-                    ),
+                  fontWeight: FontWeight.bold,
+                  color: scheme.error,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
                 'No encontramos invitaciones pendientes para:\n${widget.socialData.email}',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
+                  color: scheme.onSurfaceVariant,
+                ),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -385,9 +378,9 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
 
         Text(
           '¿Qué deseas hacer?',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 16),
 
@@ -417,7 +410,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: scheme.primaryContainer.withOpacity(0.3),
+            color: scheme.primaryContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -427,10 +420,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
               Expanded(
                 child: Text(
                   'Si tu administrador te ha invitado, asegúrate de usar el mismo correo electrónico.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: scheme.onSurface,
-                  ),
+                  style: TextStyle(fontSize: 13, color: scheme.onSurface),
                 ),
               ),
             ],
@@ -446,7 +436,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: scheme.errorContainer.withOpacity(0.3),
+            color: scheme.errorContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
@@ -475,7 +465,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withOpacity(0.5),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: scheme.outlineVariant),
       ),
@@ -489,11 +479,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
                 : null,
             backgroundColor: scheme.primaryContainer,
             child: widget.socialData.photoUrl == null
-                ? Icon(
-                    Icons.person,
-                    size: 32,
-                    color: scheme.onPrimaryContainer,
-                  )
+                ? Icon(Icons.person, size: 32, color: scheme.onPrimaryContainer)
                 : null,
           ),
           const SizedBox(width: 16),
@@ -509,10 +495,14 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: widget.socialData.providerColor.withOpacity(0.1),
+                    color: widget.socialData.providerColor.withValues(
+                      alpha: 0.1,
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: widget.socialData.providerColor.withOpacity(0.3),
+                      color: widget.socialData.providerColor.withValues(
+                        alpha: 0.3,
+                      ),
                     ),
                   ),
                   child: Row(
@@ -535,14 +525,14 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
                 Text(
                   widget.socialData.displayName,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 Text(
                   widget.socialData.email,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -555,11 +545,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
   Widget _buildProviderIcon(SocialAuthProvider provider, double size) {
     switch (provider) {
       case SocialAuthProvider.google:
-        return Image.asset(
-          'assets/google-g.png',
-          width: size,
-          height: size,
-        );
+        return Image.asset('assets/google-g.png', width: size, height: size);
       case SocialAuthProvider.microsoft:
         return Image.asset(
           'assets/microsoft-logo.png',
@@ -598,7 +584,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.1),
+                  color: iconColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: iconColor, size: 28),
@@ -611,15 +597,15 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),

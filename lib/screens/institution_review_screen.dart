@@ -1,17 +1,17 @@
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../models/institution.dart';
 import '../services/institution_service.dart';
+import 'institution_users_screen.dart';
 
-/// Pantalla de revisión detallada de una institución pendiente
 class InstitutionReviewScreen extends StatefulWidget {
   final Institution institution;
 
-  const InstitutionReviewScreen({
-    super.key,
-    required this.institution,
-  });
+  const InstitutionReviewScreen({super.key, required this.institution});
 
   @override
   State<InstitutionReviewScreen> createState() =>
@@ -19,16 +19,16 @@ class InstitutionReviewScreen extends StatefulWidget {
 }
 
 class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
-  final _institutionService = InstitutionService();
+  final InstitutionService _institutionService = InstitutionService();
   bool _isLoading = false;
 
   Future<void> _approveInstitution() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirmar Aprobación'),
+        title: const Text('Confirmar aprobacion'),
         content: Text(
-          '¿Estás seguro de aprobar la institución "${widget.institution.name}"?\n\n'
+          '¿Estas seguro de aprobar la institución "${widget.institution.name}"?\n\n'
           'Esta acción habilitará la institución y sus usuarios podrán acceder al sistema.',
         ),
         actions: [
@@ -44,30 +44,36 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
     try {
       await _institutionService.approveInstitution(widget.institution.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${widget.institution.name} ha sido aprobada'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context);
+      if (!mounted) {
+        return;
       }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.institution.name} ha sido aprobada'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al aprobar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      if (!mounted) {
+        return;
       }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al aprobar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -81,20 +87,20 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rechazar Institución'),
+        title: const Text('Rechazar institución'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '¿Estás seguro de rechazar la institución "${widget.institution.name}"?',
+              '¿Estas seguro de rechazar la institución "${widget.institution.name}"?',
             ),
             const SizedBox(height: 16),
             TextField(
               controller: reasonController,
               decoration: const InputDecoration(
                 labelText: 'Motivo del rechazo (opcional)',
-                hintText: 'Ej: Documentación incompleta',
+                hintText: 'Ej: Documentacion incompleta',
                 border: OutlineInputBorder(),
               ),
               maxLines: 3,
@@ -117,7 +123,9 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -126,24 +134,28 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
         widget.institution.id,
         reason: reasonController.text.trim(),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${widget.institution.name} ha sido rechazada'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        Navigator.pop(context);
+      if (!mounted) {
+        return;
       }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.institution.name} ha sido rechazada'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al rechazar: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      if (!mounted) {
+        return;
       }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al rechazar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -153,22 +165,104 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
 
   Future<void> _openDocument(String? url, String documentName) async {
     if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$documentName no disponible')));
+      return;
+    }
+
+    final uri = await _resolveDocumentUri(url);
+    if (uri == null) {
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$documentName no disponible')),
+        SnackBar(content: Text('$documentName no tiene un enlace valido')),
       );
       return;
     }
 
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
+    try {
+      final openedInApp = await launchUrl(
+        uri,
+        mode: LaunchMode.inAppBrowserView,
+      );
+      if (openedInApp) {
+        return;
+      }
+
+      final openedExternal = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (openedExternal) {
+        if (!mounted) {
+          return;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo abrir $documentName')),
+          SnackBar(
+            content: Text('$documentName se abrio en una aplicacion externa'),
+          ),
         );
+        return;
+      }
+
+      await _copyDocumentLink(uri.toString());
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo abrir $documentName. El enlace fue copiado al portapapeles.',
+          ),
+        ),
+      );
+    } catch (_) {
+      await _copyDocumentLink(uri.toString());
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se pudo abrir $documentName. El enlace fue copiado al portapapeles.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<Uri?> _resolveDocumentUri(String rawUrl) async {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    if (trimmed.startsWith('gs://')) {
+      try {
+        final downloadUrl = await FirebaseStorage.instance
+            .refFromURL(trimmed)
+            .getDownloadURL();
+        return Uri.tryParse(downloadUrl);
+      } catch (_) {
+        return null;
       }
     }
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Uri.tryParse(trimmed);
+    }
+    if (trimmed.startsWith('//')) {
+      return Uri.tryParse('https:$trimmed');
+    }
+    return Uri.tryParse('https://$trimmed');
+  }
+
+  Future<void> _copyDocumentLink(String url) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: url));
+    } catch (_) {}
   }
 
   @override
@@ -177,11 +271,10 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
     final institution = widget.institution;
     final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
     final createdDate = institution.createdAt?.toDate();
+    final statusMeta = _statusPresentation(institution.status, scheme);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Revisar Institución'),
-      ),
+      appBar: AppBar(title: const Text('Detalle de la institución')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -189,10 +282,9 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Header con nombre
                   Card(
                     elevation: 0,
-                    color: scheme.primaryContainer.withOpacity(0.3),
+                    color: scheme.primaryContainer.withValues(alpha: 0.22),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -215,12 +307,8 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                           const SizedBox(height: 16),
                           Text(
                             institution.name,
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 8),
@@ -230,16 +318,14 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.2),
+                              color: statusMeta.color.withValues(alpha: 0.14),
                               borderRadius: BorderRadius.circular(16),
                             ),
                             child: Text(
-                              'Pendiente de Aprobación',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelMedium
+                              statusMeta.label,
+                              style: Theme.of(context).textTheme.labelMedium
                                   ?.copyWith(
-                                    color: Colors.orange.shade700,
+                                    color: statusMeta.color,
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
@@ -249,28 +335,30 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Información de la institución
                   _buildSectionCard(
                     context,
-                    title: 'Información General',
+                    title: 'Informacion general',
                     icon: Icons.info_outline,
                     children: [
                       _buildInfoRow('NIT', institution.nit),
                       _buildInfoRow('Tipo', institution.type.displayName),
                       _buildInfoRow('Departamento', institution.department),
                       _buildInfoRow('Ciudad', institution.city),
-                      _buildInfoRow('Dirección', institution.address),
+                      _buildInfoRow('Direccion', institution.address),
+                      if (institution.inviteCode.isNotEmpty)
+                        _buildInfoRow(
+                          'Codigo de invitacion',
+                          institution.inviteCode,
+                        ),
+                      _buildInfoRow('Estado', statusMeta.label),
                       if (createdDate != null)
                         _buildInfoRow(
-                          'Fecha de Solicitud',
+                          'Fecha de solicitud',
                           dateFormat.format(createdDate),
                         ),
                     ],
                   ),
                   const SizedBox(height: 16),
-
-                  // Información de contacto
                   _buildSectionCard(
                     context,
                     title: 'Contacto',
@@ -278,18 +366,30 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                     children: [
                       _buildInfoRow('Email', institution.email),
                       _buildInfoRow(
-                        'Teléfono Institución',
+                        'Teléfono institución',
                         institution.institutionPhone,
                       ),
                       _buildInfoRow(
-                        'Celular Rector',
+                        'Celular rector',
                         institution.rectorCellPhone,
                       ),
                     ],
                   ),
                   const SizedBox(height: 16),
-
-                  // Documentos
+                  FilledButton.tonalIcon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => InstitutionUsersScreen(
+                          institutionId: institution.id,
+                          institutionName: institution.name,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.group_outlined),
+                    label: const Text('Ver usuarios asociados'),
+                  ),
+                  const SizedBox(height: 16),
                   _buildSectionCard(
                     context,
                     title: 'Documentos',
@@ -297,21 +397,21 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                     children: [
                       _buildDocumentButton(
                         context,
-                        'Cédula del Rector',
+                        'Cedula del rector',
                         institution.documents.rectorIdCard,
                         Icons.badge_outlined,
                       ),
                       if (institution.type == InstitutionType.public)
                         _buildDocumentButton(
                           context,
-                          'Acta de Posesión',
+                          'Acta de posesión',
                           institution.documents.appointmentAct,
                           Icons.description_outlined,
                         ),
                       if (institution.type == InstitutionType.private) ...[
                         _buildDocumentButton(
                           context,
-                          'Cámara de Comercio',
+                          'Camara de comercio',
                           institution.documents.chamberOfCommerce,
                           Icons.store_outlined,
                         ),
@@ -325,41 +425,129 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                     ],
                   ),
                   const SizedBox(height: 32),
-
-                  // Botones de acción
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _rejectInstitution,
-                          icon: const Icon(Icons.close),
-                          label: const Text('Rechazar'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: scheme.error,
-                            side: BorderSide(color: scheme.error),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                  if (institution.status == InstitutionStatus.pending)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _isLoading ? null : _rejectInstitution,
+                            icon: const Icon(Icons.close),
+                            label: const Text('Rechazar'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: scheme.error,
+                              side: BorderSide(color: scheme.error),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _isLoading ? null : _approveInstitution,
-                          icon: const Icon(Icons.check),
-                          label: const Text('Aprobar'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _isLoading ? null : _approveInstitution,
+                            icon: const Icon(Icons.check),
+                            label: const Text('Aprobar'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    )
+                  else
+                    _buildStatusInfoCard(context, institution, statusMeta),
                   const SizedBox(height: 24),
                 ],
               ),
             ),
+    );
+  }
+
+  _InstitutionStatusPresentation _statusPresentation(
+    InstitutionStatus status,
+    ColorScheme scheme,
+  ) {
+    switch (status) {
+      case InstitutionStatus.active:
+        return _InstitutionStatusPresentation(
+          label: 'Institución activa',
+          color: Colors.green.shade700,
+        );
+      case InstitutionStatus.rejected:
+        return _InstitutionStatusPresentation(
+          label: 'Institución rechazada',
+          color: scheme.error,
+        );
+      case InstitutionStatus.pending:
+        return _InstitutionStatusPresentation(
+          label: 'Pendiente de aprobacion',
+          color: Colors.orange.shade700,
+        );
+    }
+  }
+
+  Widget _buildStatusInfoCard(
+    BuildContext context,
+    Institution institution,
+    _InstitutionStatusPresentation statusMeta,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final String message;
+
+    switch (institution.status) {
+      case InstitutionStatus.active:
+        message =
+            'La institución ya fue aprobada y puede operar normalmente en la plataforma.';
+        break;
+      case InstitutionStatus.rejected:
+        message = institution.rejectionReason?.isNotEmpty == true
+            ? 'Esta solicitud fue rechazada. Motivo: ${institution.rejectionReason}'
+            : 'Esta solicitud fue rechazada. Puedes revisar la documentacion registrada.';
+        break;
+      case InstitutionStatus.pending:
+        message =
+            'La institución sigue pendiente de revisión por parte del super administrador.';
+        break;
+    }
+
+    return Card(
+      elevation: 0,
+      color: statusMeta.color.withValues(alpha: 0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: statusMeta.color.withValues(alpha: 0.18)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: statusMeta.color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    statusMeta.label,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    message,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -388,8 +576,8 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -455,11 +643,23 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
         style: OutlinedButton.styleFrom(
           foregroundColor: hasDocument ? scheme.primary : scheme.error,
           side: BorderSide(
-            color: hasDocument ? scheme.outline : scheme.error.withOpacity(0.5),
+            color: hasDocument
+                ? scheme.outline
+                : scheme.error.withValues(alpha: 0.5),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
       ),
     );
   }
+}
+
+class _InstitutionStatusPresentation {
+  final String label;
+  final Color color;
+
+  const _InstitutionStatusPresentation({
+    required this.label,
+    required this.color,
+  });
 }

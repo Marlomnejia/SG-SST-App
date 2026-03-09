@@ -4,6 +4,9 @@ import '../models/institution.dart';
 
 class InstitutionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final Map<String, Stream<Institution?>> _institutionStreams = {};
+  Stream<List<Institution>>? _pendingInstitutionsStream;
+  Stream<List<Institution>>? _allInstitutionsStream;
 
   static const String _collection = 'institutions';
   static const String _chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -43,7 +46,8 @@ class InstitutionService {
 
     if (!isUnique) {
       throw Exception(
-          'No se pudo generar un código único después de $maxAttempts intentos');
+        'No se pudo generar un código único después de $maxAttempts intentos',
+      );
     }
 
     return code;
@@ -133,10 +137,13 @@ class InstitutionService {
 
   /// Stream de una institución específica
   Stream<Institution?> streamInstitution(String id) {
-    return _firestore.collection(_collection).doc(id).snapshots().map((doc) {
-      if (!doc.exists) return null;
-      return Institution.fromFirestore(doc);
-    });
+    return _institutionStreams.putIfAbsent(
+      id,
+      () => _firestore.collection(_collection).doc(id).snapshots().map((doc) {
+        if (!doc.exists) return null;
+        return Institution.fromFirestore(doc);
+      }).asBroadcastStream(),
+    );
   }
 
   /// Verifica si un NIT ya está registrado
@@ -153,7 +160,7 @@ class InstitutionService {
   /// Lanza [InviteCodeException] si el código es inválido o la institución no está activa
   Future<InstitutionValidationResult> validateInviteCode(String code) async {
     final normalizedCode = code.toUpperCase().trim();
-    
+
     if (normalizedCode.length != _codeLength) {
       throw InviteCodeException(
         code: 'invalid-format',
@@ -176,7 +183,7 @@ class InstitutionService {
 
     final doc = snapshot.docs.first;
     final data = doc.data();
-    
+
     if ((data['status'] ?? 'pending') != 'active') {
       throw InviteCodeException(
         code: 'institution-inactive',
@@ -203,14 +210,31 @@ class InstitutionService {
 
   /// Stream de instituciones pendientes de aprobación (para super admin)
   Stream<List<Institution>> streamPendingInstitutions() {
-    return _firestore
+    return _pendingInstitutionsStream ??= _firestore
         .collection(_collection)
         .where('status', isEqualTo: 'pending')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Institution.fromFirestore(doc))
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Institution.fromFirestore(doc))
+              .toList(),
+        )
+        .asBroadcastStream();
+  }
+
+  /// Stream de todas las instituciones registradas (para super admin)
+  Stream<List<Institution>> streamAllInstitutions() {
+    return _allInstitutionsStream ??= _firestore
+        .collection(_collection)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Institution.fromFirestore(doc))
+              .toList(),
+        )
+        .asBroadcastStream();
   }
 
   /// Aprueba una institución (cambia status a 'active')

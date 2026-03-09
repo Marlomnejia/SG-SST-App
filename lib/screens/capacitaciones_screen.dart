@@ -1,18 +1,18 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:open_filex/open_filex.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/training_service.dart';
-import 'training_detail_screen.dart';
+import '../services/user_service.dart';
+import '../widgets/app_skeleton_box.dart';
+import '../widgets/app_meta_chip.dart';
+import '../widgets/notification_permission_banner.dart';
 
 class CapacitacionesScreen extends StatefulWidget {
-  const CapacitacionesScreen({Key? key}) : super(key: key);
+  const CapacitacionesScreen({super.key});
 
   @override
   State<CapacitacionesScreen> createState() => _CapacitacionesScreenState();
@@ -21,17 +21,22 @@ class CapacitacionesScreen extends StatefulWidget {
 class _CapacitacionesScreenState extends State<CapacitacionesScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  final TrainingService _trainingService = TrainingService();
-
-  String _statusFilter = 'all';
-  String _catalogCategory = 'all';
-  String _catalogType = 'all';
-  String _catalogDuration = 'all';
+  final TrainingService _service = TrainingService();
+  final UserService _userService = UserService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late Stream<QuerySnapshot<Map<String, dynamic>>> _publishedTrainingsStream;
+  bool _ready = false;
+  String? _loadError;
+  String? _institutionId;
+  String? _currentUid;
+  bool _showCompletedVideos = false;
+  final Set<String> _savingRsvpTrainingIds = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _bootstrap();
   }
 
   @override
@@ -40,777 +45,2109 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
     super.dispose();
   }
 
+  Future<void> _bootstrap() async {
+    setState(() {
+      _ready = false;
+      _loadError = null;
+    });
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('No hay sesion activa.');
+      }
+      final institutionId = await _userService.getUserInstitutionId(user.uid);
+      if (institutionId == null || institutionId.trim().isEmpty) {
+        throw Exception('Usuario sin institución asignada.');
+      }
+      if (!mounted) return;
+      setState(() {
+        _currentUid = user.uid;
+        _institutionId = institutionId;
+        _publishedTrainingsStream = _firestore
+            .collection('institutions')
+            .doc(institutionId)
+            .collection('trainings')
+            .where('status', isEqualTo: 'published')
+            .snapshots()
+            .asBroadcastStream();
+        _ready = true;
+      });
+      if (kDebugMode) {
+        debugPrint(
+          '[Trainings][bootstrap] uid=${user.uid} institutionId=$institutionId',
+        );
+        debugPrint(
+          '[Trainings][bootstrap] queryPath=institutions/$institutionId/trainings status=published',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.toString();
+        _ready = false;
+      });
+    }
+  }
+
+  void _retryStreams() {
+    _bootstrap();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _trainingService.streamAllTrainings(),
-      builder: (context, snapshot) {
-        final List<QueryDocumentSnapshot> trainings = snapshot.data?.docs ?? [];
-        final Map<String, Map<String, dynamic>> trainingMap = {
-          for (final doc in trainings)
-            doc.id: doc.data() as Map<String, dynamic>
-        };
-        final List<QueryDocumentSnapshot> publishedTrainings = trainings
-            .where((doc) =>
-                (doc.data() as Map<String, dynamic>)['published'] == true)
-            .toList();
-
-        final Set<String> categories = {'all'};
-        for (final doc in trainings) {
-          final data = doc.data() as Map<String, dynamic>;
-          final String? category = data['category'] as String?;
-          if (category != null && category.trim().isNotEmpty) {
-            categories.add(category);
-          }
-        }
-
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Capacitaciones'),
-            bottom: TabBar(
-              controller: _tabController,
-              tabs: const [
-                Tab(text: 'Mis capacitaciones'),
-                Tab(text: 'Catalogo'),
-                Tab(text: 'Certificados'),
-                Tab(text: 'Historial'),
-              ],
-              isScrollable: true,
-            ),
-          ),
-          body: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildAssignedTrainings(trainingMap),
-              _buildCatalog(publishedTrainings, categories.toList()..sort()),
-              _buildCertificates(trainingMap),
-              _buildHistory(trainingMap),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAssignedTrainings(Map<String, Map<String, dynamic>> trainingMap) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Center(child: Text('No hay usuario autenticado.'));
+    if (_loadError != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Capacitaciones')),
+        body: _buildErrorState(
+          context,
+          title: 'No se pudieron cargar las capacitaciones',
+          subtitle: 'Verifica tu conexion e intenta nuevamente.',
+          onRetry: _retryStreams,
+        ),
+      );
+    }
+    if (!_ready) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Capacitaciones')),
+        body: _buildTrainingsScreenSkeleton(),
+      );
     }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: _trainingService.streamAssignmentsForUser(user.uid),
-      builder: (context, assignmentSnapshot) {
-        if (assignmentSnapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (!assignmentSnapshot.hasData || assignmentSnapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('No tienes capacitaciones asignadas.'));
-        }
+    return Scaffold(
+      appBar: AppBar(title: const Text('Capacitaciones')),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _publishedTrainingsStream,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _buildErrorState(
+              context,
+              title: 'No se pudieron cargar las capacitaciones',
+              subtitle: _friendlyStreamError(snapshot.error),
+              onRetry: _retryStreams,
+            );
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return _buildTrainingsScreenSkeleton();
+          }
+          final docs = snapshot.data?.docs ?? const [];
+          final videoDocs =
+              docs
+                  .where(
+                    (doc) => (doc.data()['type'] ?? '').toString() == 'video',
+                  )
+                  .toList()
+                ..sort(_sortByCreatedAtDesc);
 
-        final assignments = assignmentSnapshot.data!.docs;
-        final Map<String, Timestamp?> dueDates = {};
-        final Set<String> assignedTrainingIds = {};
-        for (final assignment in assignments) {
-          final data = assignment.data() as Map<String, dynamic>;
-          final String? trainingId = data['trainingId'];
-          if (trainingId == null) continue;
-          assignedTrainingIds.add(trainingId);
-          dueDates[trainingId] = data['dueDate'] as Timestamp?;
-        }
-
-        final List<MapEntry<String, Map<String, dynamic>>> assignedTrainings =
-            assignedTrainingIds
-                .where((id) => trainingMap.containsKey(id))
-                .map((id) => MapEntry(id, trainingMap[id]!))
-                .toList();
-
-        return StreamBuilder<QuerySnapshot>(
-          stream: _trainingService.streamAttemptsForUser(user.uid),
-          builder: (context, attemptSnapshot) {
-            final Map<String, Map<String, dynamic>> latestAttempt = {};
-            if (attemptSnapshot.hasData) {
-              for (final doc in attemptSnapshot.data!.docs) {
-                final data = doc.data() as Map<String, dynamic>;
-                final String trainingId = data['trainingId'] ?? '';
-                if (trainingId.isEmpty) continue;
-                final Timestamp? completedAt = data['completedAt'] as Timestamp?;
-                final Timestamp? current =
-                    latestAttempt[trainingId]?['completedAt'] as Timestamp?;
-                if (current == null ||
-                    (completedAt != null && completedAt.compareTo(current) > 0)) {
-                  latestAttempt[trainingId] = data;
-                }
-              }
+          final scheduledCount = docs
+              .where(
+                (doc) => (doc.data()['type'] ?? '').toString() == 'scheduled',
+              )
+              .length;
+          if (kDebugMode) {
+            debugPrint(
+              '[Trainings][user] institutionId=$_institutionId uid=$_currentUid total=${docs.length} scheduled=$scheduledCount video=${videoDocs.length}',
+            );
+            if (docs.isEmpty) {
+              debugPrint(
+                '[Trainings][user] No hay resultados. Verifica institutionId y status=published en institutions/$_institutionId/trainings',
+              );
             }
+          }
 
-            return StreamBuilder<QuerySnapshot>(
-              stream: _trainingService.streamCertificatesForUser(user.uid),
-              builder: (context, certSnapshot) {
-                final Map<String, Timestamp?> latestCertificate = {};
-                if (certSnapshot.hasData) {
-                  for (final doc in certSnapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final String trainingId = data['trainingId'] ?? '';
-                    final Timestamp? issuedAt = data['issuedAt'] as Timestamp?;
-                    if (trainingId.isEmpty || issuedAt == null) continue;
-                    final Timestamp? current = latestCertificate[trainingId];
-                    if (current == null || issuedAt.compareTo(current) > 0) {
-                      latestCertificate[trainingId] = issuedAt;
-                    }
-                  }
-                }
-
-                final List<_TrainingListItem> items = [];
-                for (final entry in assignedTrainings) {
-                  final String trainingId = entry.key;
-                  final data = entry.value;
-                  final String title = data['title'] ?? 'Capacitacion';
-                  final String type = data['mandatory'] == true
-                      ? 'Obligatoria'
-                      : 'Opcional';
-                  final int duration = data['durationMinutes'] ?? 0;
-                  final int validityMonths = data['validityMonths'] ?? 12;
-                  final Timestamp? dueDate = dueDates[trainingId];
-
-                  final Timestamp? issuedAt = latestCertificate[trainingId];
-                  final bool isExpired =
-                      _isExpired(issuedAt, validityMonths);
-                  final bool isCompleted = issuedAt != null && !isExpired;
-
-                  final bool isOverdue = dueDate != null &&
-                      dueDate.toDate().isBefore(DateTime.now()) &&
-                      !isCompleted;
-
-                  final Map<String, dynamic>? attempt = latestAttempt[trainingId];
-                  final bool hasAttempt = attempt != null;
-
-                  String status = 'Pendiente';
-                  if (isExpired) {
-                    status = 'Vencida';
-                  } else if (isCompleted) {
-                    status = 'Completada';
-                  } else if (isOverdue) {
-                    status = 'Vencida';
-                  } else if (hasAttempt) {
-                    status = 'En curso';
-                  }
-
-                  if (_statusFilter != 'all' && _statusFilter != status) {
-                    continue;
-                  }
-
-                  int progress = 0;
-                  if (isCompleted) {
-                    progress = 100;
-                  } else if (hasAttempt && !isExpired) {
-                    progress = 50;
-                  }
-
-                  final String actionLabel = isCompleted || isExpired
-                      ? 'Repetir'
-                      : hasAttempt
-                          ? 'Continuar'
-                          : 'Iniciar';
-
-                  items.add(
-                    _TrainingListItem(
-                      trainingId: trainingId,
-                      title: title,
-                      type: type,
-                      duration: duration,
-                      status: status,
-                      progress: progress,
-                      actionLabel: actionLabel,
-                      data: data,
-                    ),
+          return Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: NotificationPermissionBanner(),
+              ),
+              FutureBuilder<_VideoProgressMetrics>(
+                future: _loadVideoProgressMetrics(videoDocs),
+                builder: (context, progressSnap) {
+                  final metrics =
+                      progressSnap.data ??
+                      _VideoProgressMetrics(
+                        watchedCount: 0,
+                        totalCount: videoDocs.length,
+                      );
+                  return _VideoProgressSummary(
+                    watchedCount: metrics.watchedCount,
+                    totalCount: metrics.totalCount,
+                    loading:
+                        progressSnap.connectionState == ConnectionState.waiting,
                   );
-                }
-
-                if (items.isEmpty) {
-                  return const Center(child: Text('Sin resultados.'));
-                }
-
-                return ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    _buildStatusFilters(),
-                    const SizedBox(height: 12),
-                    ...items.map(
-                      (item) => _TrainingCard(
-                        title: item.title,
-                        type: item.type,
-                        duration: item.duration,
-                        status: item.status,
-                        progress: item.progress,
-                        actionLabel: item.actionLabel,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => TrainingDetailScreen(
-                                trainingId: item.trainingId,
-                                data: item.data,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                },
+              ),
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outline.withValues(alpha: 0.22),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
                   ],
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildCatalog(
-    List<QueryDocumentSnapshot> trainings,
-    List<String> categories,
-  ) {
-    final List<QueryDocumentSnapshot> filtered = trainings.where((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-      final String category = data['category'] ?? 'General';
-      final String type = data['contentType'] ?? 'text';
-      final int duration = data['durationMinutes'] ?? 0;
-
-      if (_catalogCategory != 'all' && category != _catalogCategory) {
-        return false;
-      }
-      if (_catalogType != 'all' && type != _catalogType) {
-        return false;
-      }
-      if (_catalogDuration == 'short' && duration > 10) {
-        return false;
-      }
-      if (_catalogDuration == 'medium' && (duration <= 10 || duration > 20)) {
-        return false;
-      }
-      if (_catalogDuration == 'long' && duration <= 20) {
-        return false;
-      }
-
-      return true;
-    }).toList();
-
-    if (trainings.isEmpty) {
-      return const Center(child: Text('No hay capacitaciones publicadas.'));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildCatalogFilters(categories),
-        const SizedBox(height: 12),
-        if (filtered.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: 24),
-            child: Center(child: Text('No hay resultados.')),
-          )
-        else
-          ...filtered.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            final String title = data['title'] ?? 'Capacitacion';
-            final String category = data['category'] ?? 'General';
-            final int duration = data['durationMinutes'] ?? 0;
-            final String contentType = data['contentType'] ?? 'text';
-
-            return _CatalogCard(
-              title: title,
-              category: category,
-              duration: duration,
-              contentType: contentType,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => TrainingDetailScreen(
-                      trainingId: doc.id,
-                      data: data,
-                    ),
-                  ),
-                );
-              },
-            );
-          }),
-      ],
-    );
-  }
-
-  Widget _buildCertificates(Map<String, Map<String, dynamic>> trainingMap) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Center(child: Text('No hay usuario autenticado.'));
-    }
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: _trainingService.streamCertificatesForUser(user.uid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('No tienes certificados.'));
-        }
-
-        final certificates = snapshot.data!.docs;
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: certificates.length,
-          itemBuilder: (context, index) {
-            final data = certificates[index].data() as Map<String, dynamic>;
-            final String trainingId = data['trainingId'] ?? '';
-            final String version = data['version'] ?? 'v1';
-            final Timestamp? issuedAt = data['issuedAt'] as Timestamp?;
-            final String title =
-                trainingMap[trainingId]?['title'] ?? 'Capacitacion';
-            final int validityMonths =
-                trainingMap[trainingId]?['validityMonths'] ?? 12;
-            final bool expired = _isExpired(issuedAt, validityMonths);
-
-            return Card(
-              child: ListTile(
-                title: Text(title),
-                subtitle: Text(
-                  'Version: $version | Fecha: ${_formatDateTime(issuedAt)} | '
-                  '${expired ? 'Vencido' : 'Vigente'}',
                 ),
-                trailing: const Icon(Icons.download),
-                onTap: () {
-                  _showCertificateActions(
-                    trainingTitle: title,
-                    version: version,
-                    issuedAt: issuedAt,
-                    score: data['score'] ?? 0,
-                  );
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildHistory(Map<String, Map<String, dynamic>> trainingMap) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return const Center(child: Text('No hay usuario autenticado.'));
-    }
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: _trainingService.streamAttemptsForUser(user.uid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Center(child: Text('No hay historial.'));
-        }
-
-        final attempts = snapshot.data!.docs;
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: attempts.length,
-          itemBuilder: (context, index) {
-            final data = attempts[index].data() as Map<String, dynamic>;
-            final String trainingId = data['trainingId'] ?? '';
-            final int score = data['score'] ?? 0;
-            final bool passed = data['passed'] == true;
-            final Timestamp? completedAt = data['completedAt'] as Timestamp?;
-            final String title =
-                trainingMap[trainingId]?['title'] ?? 'Capacitacion';
-
-            return Card(
-              child: ListTile(
-                title: Text(title),
-                subtitle: Text(
-                  'Resultado: ${passed ? 'Aprobado' : 'Reprobado'} | Nota: $score%',
+                child: TabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    Tab(text: 'Proximas'),
+                    Tab(text: 'En linea'),
+                    Tab(text: 'Historial'),
+                  ],
                 ),
-                trailing: Text(_formatDateTime(completedAt)),
               ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildStatusFilters() {
-    final List<String> filters = [
-      'all',
-      'Pendiente',
-      'En curso',
-      'Completada',
-      'Vencida',
-    ];
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: filters.map((filter) {
-        final bool selected = _statusFilter == filter;
-        final String label = filter == 'all' ? 'Todas' : filter;
-        return ChoiceChip(
-          label: Text(label),
-          selected: selected,
-          onSelected: (_) {
-            setState(() {
-              _statusFilter = filter;
-            });
-          },
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildCatalogFilters(List<String> categories) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            SizedBox(
-              width: 180,
-              child: DropdownButtonFormField<String>(
-                value: _catalogCategory,
-                decoration: const InputDecoration(labelText: 'Riesgo'),
-                items: categories
-                    .map((category) => DropdownMenuItem(
-                          value: category,
-                          child: Text(category == 'all' ? 'Todos' : category),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _catalogCategory = value;
-                    });
-                  }
-                },
-              ),
-            ),
-            SizedBox(
-              width: 160,
-              child: DropdownButtonFormField<String>(
-                value: _catalogType,
-                decoration: const InputDecoration(labelText: 'Tipo'),
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('Todos')),
-                  DropdownMenuItem(value: 'video', child: Text('Video')),
-                  DropdownMenuItem(value: 'text', child: Text('Lectura')),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _catalogType = value;
-                    });
-                  }
-                },
-              ),
-            ),
-            SizedBox(
-              width: 160,
-              child: DropdownButtonFormField<String>(
-                value: _catalogDuration,
-                decoration: const InputDecoration(labelText: 'Duracion'),
-                items: const [
-                  DropdownMenuItem(value: 'all', child: Text('Todas')),
-                  DropdownMenuItem(value: 'short', child: Text('<= 10 min')),
-                  DropdownMenuItem(value: 'medium', child: Text('11-20 min')),
-                  DropdownMenuItem(value: 'long', child: Text('> 20 min')),
-                ],
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _catalogDuration = value;
-                    });
-                  }
-                },
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  String _formatDateTime(Timestamp? timestamp) {
-    if (timestamp == null) {
-      return 'No disponible';
-    }
-    return DateFormat('dd/MM/yyyy').format(timestamp.toDate());
-  }
-
-  Future<void> _shareCertificate({
-    required String trainingTitle,
-    required String version,
-    required Timestamp? issuedAt,
-    required int score,
-  }) async {
-    final file = await _buildCertificatePdf(
-      trainingTitle: trainingTitle,
-      version: version,
-      issuedAt: issuedAt,
-      score: score,
-    );
-
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      text: 'Certificado SST - $trainingTitle',
-    );
-  }
-
-  Future<void> _previewCertificate({
-    required String trainingTitle,
-    required String version,
-    required Timestamp? issuedAt,
-    required int score,
-  }) async {
-    final file = await _buildCertificatePdf(
-      trainingTitle: trainingTitle,
-      version: version,
-      issuedAt: issuedAt,
-      score: score,
-    );
-    await OpenFilex.open(file.path);
-  }
-
-  Future<File> _buildCertificatePdf({
-    required String trainingTitle,
-    required String version,
-    required Timestamp? issuedAt,
-    required int score,
-  }) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final String date = issuedAt != null
-        ? DateFormat('dd/MM/yyyy').format(issuedAt.toDate())
-        : 'No disponible';
-
-    final doc = pw.Document();
-    doc.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (context) {
-          return pw.Container(
-            padding: const pw.EdgeInsets.all(32),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Certificado de Capacitacion',
-                  style: pw.TextStyle(
-                    fontSize: 24,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildUpcoming(docs),
+                    _buildOnline(docs),
+                    _buildHistory(docs),
+                  ],
                 ),
-                pw.SizedBox(height: 16),
-                pw.Text('Programa: $trainingTitle'),
-                pw.Text('Version: $version'),
-                pw.Text('Fecha: $date'),
-                pw.Text('Participante: ${user?.email ?? 'Usuario'}'),
-                pw.Text('Resultado: $score%'),
-                pw.SizedBox(height: 24),
-                pw.Text(
-                  'Este certificado acredita la participacion y aprobacion '
-                  'de la capacitacion en el sistema SST.',
-                ),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),
     );
-
-    final directory = await getTemporaryDirectory();
-    final safeTitle = trainingTitle.replaceAll(' ', '_');
-    final file = File('${directory.path}/certificado_${safeTitle}_$version.pdf');
-    await file.writeAsBytes(await doc.save());
-    return file;
   }
 
-  Future<void> _showCertificateActions({
-    required String trainingTitle,
-    required String version,
-    required Timestamp? issuedAt,
-    required int score,
-  }) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.picture_as_pdf),
-                title: const Text('Vista previa'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _previewCertificate(
-                    trainingTitle: trainingTitle,
-                    version: version,
-                    issuedAt: issuedAt,
-                    score: score,
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share),
-                title: const Text('Compartir'),
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _shareCertificate(
-                    trainingTitle: trainingTitle,
-                    version: version,
-                    issuedAt: issuedAt,
-                    score: score,
-                  );
-                },
-              ),
-            ],
+  DocumentReference<Map<String, dynamic>>? _trainingRef(String trainingId) {
+    final institutionId = _institutionId;
+    if (institutionId == null || institutionId.trim().isEmpty) return null;
+    return _firestore
+        .collection('institutions')
+        .doc(institutionId)
+        .collection('trainings')
+        .doc(trainingId);
+  }
+
+  Future<_VideoProgressMetrics> _loadVideoProgressMetrics(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> videoDocs,
+  ) async {
+    final uid = _currentUid;
+    if (uid == null || uid.trim().isEmpty) {
+      return _VideoProgressMetrics(
+        watchedCount: 0,
+        totalCount: videoDocs.length,
+      );
+    }
+    final futures = <Future<DocumentSnapshot<Map<String, dynamic>>>>[];
+    for (final doc in videoDocs) {
+      final ref = _trainingRef(doc.id);
+      if (ref == null) continue;
+      final progressRef = ref.collection('progress').doc(uid);
+      if (kDebugMode) {
+        debugPrint(
+          '[Trainings][progress-summary-read] path=${progressRef.path} trainingId=${doc.id}',
+        );
+      }
+      futures.add(progressRef.get());
+    }
+    final snapshots = await Future.wait(futures);
+    final watchedCount = snapshots.where((snap) {
+      final data = snap.data();
+      return data != null && data['watched'] == true;
+    }).length;
+    if (kDebugMode) {
+      debugPrint(
+        '[Trainings][progress-summary] institutionId=$_institutionId uid=$uid watched=$watchedCount total=${videoDocs.length}',
+      );
+    }
+    return _VideoProgressMetrics(
+      watchedCount: watchedCount,
+      totalCount: videoDocs.length,
+    );
+  }
+
+  Future<Map<String, _VideoProgressState>> _loadVideoProgressState(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> videoDocs,
+  ) async {
+    final uid = _currentUid;
+    if (uid == null || uid.trim().isEmpty) {
+      return {for (final doc in videoDocs) doc.id: const _VideoProgressState()};
+    }
+
+    final entries = await Future.wait(
+      videoDocs.map((doc) async {
+        final ref = _trainingRef(doc.id);
+        if (ref == null) {
+          return MapEntry(doc.id, const _VideoProgressState());
+        }
+        final progressRef = ref.collection('progress').doc(uid);
+        if (kDebugMode) {
+          debugPrint(
+            '[Trainings][progress-list-read] path=${progressRef.path} trainingId=${doc.id} uid=$uid',
+          );
+        }
+        final snap = await progressRef.get();
+        final data = snap.data();
+        final watched = data?['watched'] == true;
+        final watchedAt = data?['watchedAt'] as Timestamp?;
+        return MapEntry(
+          doc.id,
+          _VideoProgressState(watched: watched, watchedAt: watchedAt),
+        );
+      }),
+    );
+
+    return {for (final entry in entries) entry.key: entry.value};
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _myRsvpStream(
+    String trainingId,
+  ) {
+    final ref = _trainingRef(trainingId);
+    final uid = _currentUid;
+    if (ref == null || uid == null || uid.trim().isEmpty) {
+      return const Stream.empty();
+    }
+    return ref.collection('responses').doc(uid).snapshots();
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> _myAttendanceStream(
+    String trainingId,
+  ) {
+    final ref = _trainingRef(trainingId);
+    final uid = _currentUid;
+    if (ref == null || uid == null || uid.trim().isEmpty) {
+      return const Stream.empty();
+    }
+    return ref.collection('attendance').doc(uid).snapshots();
+  }
+
+  Widget _buildUpcoming(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> allDocs,
+  ) {
+    final docs =
+        allDocs
+            .where(
+              (doc) => (doc.data()['type'] ?? '').toString() == 'scheduled',
+            )
+            .toList()
+          ..sort(_sortScheduledForUser);
+
+    if (docs.isEmpty) {
+      return _buildEmptyState(
+        context,
+        icon: Icons.event_busy_outlined,
+        title: 'No hay capacitaciones programadas',
+        subtitle: 'Cuando tu institución publique una, aparecerá aquí.',
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: docs.length,
+      itemBuilder: (_, index) {
+        final doc = docs[index];
+        final data = doc.data();
+        final scheduled = (data['scheduled'] as Map<String, dynamic>?) ?? {};
+        final mode = (scheduled['mode'] ?? 'presencial').toString();
+        final startAt = scheduled['startAt'] as Timestamp?;
+        final endAt = scheduled['endAt'] as Timestamp?;
+        final topic = (data['topic'] ?? '').toString().trim();
+        final description = (data['description'] ?? '').toString().trim();
+        final place = (scheduled['place'] ?? '').toString().trim();
+        final meetUrl = (scheduled['meetUrl'] ?? '').toString().trim();
+        final requireRsvp = scheduled['requireRsvp'] != false;
+        final rawCapacity = scheduled['capacity'];
+        final capacity = rawCapacity is num
+            ? rawCapacity.toInt()
+            : int.tryParse(rawCapacity?.toString() ?? '');
+        final status = (data['status'] ?? 'published').toString();
+        final publishedAt =
+            (data['publishedAt'] as Timestamp?) ??
+            (data['createdAt'] as Timestamp?);
+        final isCancelled = status == 'cancelled';
+        final rangeText = _formatFriendlyRange(startAt, endAt);
+        final timeBadge = _buildTimeStateBadge(
+          startAt: startAt?.toDate(),
+          endAt: endAt?.toDate(),
+          now: DateTime.now(),
+        );
+        final scheme = Theme.of(context).colorScheme;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 14),
+          elevation: 0.8,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: scheme.outline.withValues(alpha: 0.18)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _MetaBadgeUser(
+                  icon: Icons.event_available_outlined,
+                  label: 'Sesión programada',
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        (data['title'] ?? 'Capacitacion').toString(),
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    _StatusBadgeUser(status: status),
+                  ],
+                ),
+                if (publishedAt != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${status == 'published' ? 'Publicada' : 'Creada'}: ${_formatOptionalDate(publishedAt)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _MetaBadgeUser(icon: Icons.schedule, label: rangeText),
+                    _MetaBadgeUser(
+                      icon: mode == 'virtual'
+                          ? Icons.videocam_outlined
+                          : Icons.location_on_outlined,
+                      label: mode == 'virtual' ? 'Virtual' : 'Presencial',
+                    ),
+                    _MetaBadgeUser(
+                      icon: requireRsvp
+                          ? Icons.how_to_reg_outlined
+                          : Icons.info_outline,
+                      label: requireRsvp
+                          ? 'Confirmacion requerida'
+                          : 'Confirmacion opcional',
+                    ),
+                    if (capacity != null && capacity > 0)
+                      _MetaBadgeUser(
+                        icon: Icons.group_outlined,
+                        label: 'Cupos: $capacity',
+                      ),
+                    if (timeBadge != null) timeBadge,
+                  ],
+                ),
+                if (topic.isNotEmpty || description.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest.withValues(
+                        alpha: 0.2,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: scheme.outline.withValues(alpha: 0.14),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (topic.isNotEmpty)
+                          Text(
+                            topic,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        if (description.isNotEmpty) ...[
+                          if (topic.isNotEmpty) const SizedBox(height: 6),
+                          Text(
+                            description,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                if (mode == 'virtual' && meetUrl.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.link_rounded,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Enlace de la reunión',
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          meetUrl,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            onPressed: isCancelled
+                                ? null
+                                : () {
+                                    HapticFeedback.selectionClick();
+                                    _openMeetingLink(meetUrl);
+                                  },
+                            icon: const Icon(Icons.open_in_new_rounded),
+                            label: const Text('Abrir reunión'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (mode != 'virtual' && place.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.outline.withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.place_outlined,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            place,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _myRsvpStream(doc.id),
+                  builder: (context, rsvpSnap) {
+                    final rsvp = rsvpSnap.data?.data();
+                    final current = (rsvp?['response'] ?? '').toString();
+                    final respondedAt = rsvp?['respondedAt'] as Timestamp?;
+                    final hasResponded = current.isNotEmpty;
+                    final isSavingResponse = _savingRsvpTrainingIds.contains(
+                      doc.id,
+                    );
+                    final canRespond =
+                        !isCancelled && !hasResponded && !isSavingResponse;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest.withValues(
+                              alpha: 0.18,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: scheme.outline.withValues(alpha: 0.14),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tu confirmacion',
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _rsvpButton(
+                                    doc.id,
+                                    'yes',
+                                    'Asistir',
+                                    current,
+                                    enabled: canRespond,
+                                  ),
+                                  _rsvpButton(
+                                    doc.id,
+                                    'no',
+                                    'No puedo',
+                                    current,
+                                    enabled: canRespond,
+                                  ),
+                                  _rsvpButton(
+                                    doc.id,
+                                    'maybe',
+                                    'Quizas',
+                                    current,
+                                    enabled: canRespond,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                current.isEmpty
+                                    ? 'Estado: sin confirmacion'
+                                    : 'Estado: ${_labelResponse(current)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              if (respondedAt != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Registrada: ${_formatOptionalDate(respondedAt)}',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                              if (isSavingResponse) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Guardando confirmacion...',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                              if (hasResponded && !isCancelled) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Tu confirmacion ya fue registrada.',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                ),
+                              ],
+                              if (isCancelled) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Capacitacion cancelada.',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                      ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  bool _isExpired(Timestamp? issuedAt, int validityMonths) {
-    if (issuedAt == null) {
-      return false;
+  Widget _buildOnline(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> allDocs,
+  ) {
+    final docs =
+        allDocs
+            .where((doc) => (doc.data()['type'] ?? '').toString() == 'video')
+            .toList()
+          ..sort(_sortByCreatedAtDesc);
+
+    if (docs.isEmpty) {
+      return _buildEmptyState(
+        context,
+        icon: Icons.video_library_outlined,
+        title: 'No hay videos publicados',
+        subtitle: 'Cuando se publiquen contenidos en línea, los verás aquí.',
+      );
     }
-    final DateTime issuedDate = issuedAt.toDate();
-    final DateTime expiresAt = _addMonths(issuedDate, validityMonths);
-    return DateTime.now().isAfter(expiresAt);
+
+    return FutureBuilder<Map<String, _VideoProgressState>>(
+      future: _loadVideoProgressState(docs),
+      builder: (context, progressSnap) {
+        if (progressSnap.connectionState == ConnectionState.waiting &&
+            !progressSnap.hasData) {
+          return _buildTrainingsListSkeleton();
+        }
+
+        final progressByTraining =
+            progressSnap.data ?? const <String, _VideoProgressState>{};
+        final pendingDocs = docs
+            .where((doc) => !(progressByTraining[doc.id]?.watched ?? false))
+            .toList();
+        final completedDocs =
+            docs
+                .where((doc) => progressByTraining[doc.id]?.watched == true)
+                .toList()
+              ..sort(
+                (a, b) => _sortCompletedVideosByWatchedAtDesc(
+                  a,
+                  b,
+                  progressByTraining,
+                ),
+              );
+
+        final children = <Widget>[
+          if (pendingDocs.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'No tienes videos pendientes. Revisa tus completadas abajo.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ...pendingDocs.map(
+              (doc) => _buildVideoTrainingCard(
+                doc: doc,
+                progressState:
+                    progressByTraining[doc.id] ?? const _VideoProgressState(),
+              ),
+            ),
+          const SizedBox(height: 6),
+          Card(
+            child: Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                key: ValueKey('completed_videos_${completedDocs.length}'),
+                initiallyExpanded: _showCompletedVideos,
+                onExpansionChanged: (expanded) {
+                  if (!mounted) return;
+                  setState(() => _showCompletedVideos = expanded);
+                },
+                leading: Icon(
+                  Icons.task_alt_rounded,
+                  color: Colors.green.shade600,
+                ),
+                title: Text(
+                  'Completadas (${completedDocs.length})',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  completedDocs.isEmpty
+                      ? 'Aún no has completado videos'
+                      : 'Revisa aqui tus videos finalizados',
+                ),
+                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                children: [
+                  if (completedDocs.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text('Sin videos completados por ahora.'),
+                    )
+                  else
+                    ...completedDocs.map(
+                      (doc) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _buildVideoTrainingCard(
+                          doc: doc,
+                          progressState:
+                              progressByTraining[doc.id] ??
+                              const _VideoProgressState(),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ];
+
+        return ListView(padding: const EdgeInsets.all(12), children: children);
+      },
+    );
   }
 
-  DateTime _addMonths(DateTime date, int months) {
-    final int year = date.year + ((date.month - 1 + months) ~/ 12);
-    final int month = (date.month - 1 + months) % 12 + 1;
-    final int day = date.day;
-    final int lastDayOfMonth = DateTime(year, month + 1, 0).day;
-    return DateTime(
-      year,
-      month,
-      day > lastDayOfMonth ? lastDayOfMonth : day,
-      date.hour,
-      date.minute,
-      date.second,
+  Widget _buildHistory(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> allDocs,
+  ) {
+    final videoDocs =
+        allDocs
+            .where((doc) => (doc.data()['type'] ?? '').toString() == 'video')
+            .toList()
+          ..sort(_sortByCreatedAtDesc);
+    final sorted = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+      allDocs,
+    )..sort(_sortByCreatedAtDesc);
+
+    return FutureBuilder<Map<String, _VideoProgressState>>(
+      future: _loadVideoProgressState(videoDocs),
+      builder: (context, progressSnap) {
+        if (progressSnap.connectionState == ConnectionState.waiting &&
+            !progressSnap.hasData) {
+          return _buildTrainingsListSkeleton();
+        }
+
+        final progressByTraining =
+            progressSnap.data ?? const <String, _VideoProgressState>{};
+        final filtered = sorted.where((doc) {
+          final type = (doc.data()['type'] ?? '').toString();
+          if (type != 'video') return true;
+          return progressByTraining[doc.id]?.watched == true;
+        }).toList();
+
+        if (filtered.isEmpty) {
+          return _buildEmptyState(
+            context,
+            icon: Icons.history_outlined,
+            title: 'Sin historial',
+            subtitle:
+                'Aún no tienes capacitaciones finalizadas en tu historial.',
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: filtered.length,
+          itemBuilder: (_, index) {
+            final doc = filtered[index];
+            final data = doc.data();
+            final scheme = Theme.of(context).colorScheme;
+            final title = (data['title'] ?? 'Capacitacion').toString();
+            final type = (data['type'] ?? '').toString();
+            final status = (data['status'] ?? 'published').toString();
+            final topic = (data['topic'] ?? '').toString().trim();
+            final description = (data['description'] ?? '').toString().trim();
+            final isScheduled = type == 'scheduled';
+            final scheduled =
+                (data['scheduled'] as Map<String, dynamic>?) ?? {};
+            final video = (data['video'] as Map<String, dynamic>?) ?? {};
+            final startAt = scheduled['startAt'] as Timestamp?;
+            final endAt = scheduled['endAt'] as Timestamp?;
+            final mode = (scheduled['mode'] ?? '').toString();
+            final duration = video['durationMinutes'];
+            final publishedAt =
+                (data['publishedAt'] as Timestamp?) ??
+                (data['createdAt'] as Timestamp?);
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 14),
+              elevation: 0.8,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(color: scheme.outline.withValues(alpha: 0.18)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _MetaBadgeUser(
+                      icon: isScheduled
+                          ? Icons.history_toggle_off_outlined
+                          : Icons.task_alt_outlined,
+                      label: isScheduled
+                          ? 'Registro programado'
+                          : 'Video completado',
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        _StatusBadgeUser(status: status),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _MetaBadgeUser(
+                          icon: isScheduled
+                              ? Icons.event_available_outlined
+                              : Icons.ondemand_video_outlined,
+                          label: isScheduled ? 'Programada' : 'Video',
+                        ),
+                        if (isScheduled)
+                          _MetaBadgeUser(
+                            icon: Icons.schedule,
+                            label: _formatFriendlyRange(startAt, endAt),
+                          ),
+                        if (isScheduled && mode.trim().isNotEmpty)
+                          _MetaBadgeUser(
+                            icon: mode == 'virtual'
+                                ? Icons.videocam_outlined
+                                : Icons.location_on_outlined,
+                            label: mode == 'virtual' ? 'Virtual' : 'Presencial',
+                          ),
+                        if (!isScheduled && duration != null)
+                          _MetaBadgeUser(
+                            icon: Icons.schedule_outlined,
+                            label: '$duration min',
+                          ),
+                      ],
+                    ),
+                    if (topic.isNotEmpty || description.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest.withValues(
+                            alpha: 0.2,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: scheme.outline.withValues(alpha: 0.14),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (topic.isNotEmpty)
+                              Text(
+                                topic,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            if (description.isNotEmpty) ...[
+                              if (topic.isNotEmpty) const SizedBox(height: 6),
+                              Text(
+                                description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    if (isScheduled) ...[
+                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: _myRsvpStream(doc.id),
+                        builder: (context, rsvpSnap) {
+                          final value =
+                              (rsvpSnap.data?.data()?['response'] ?? '')
+                                  .toString();
+                          return Text(
+                            value.isEmpty
+                                ? 'Confirmacion: sin respuesta'
+                                : 'Confirmacion: ${_labelResponse(value)}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: _myAttendanceStream(doc.id),
+                        builder: (context, attendanceSnap) {
+                          final attended =
+                              attendanceSnap.data?.data()?['attended'] == true;
+                          return Text(
+                            attendanceSnap.data?.exists == true
+                                ? 'Asistencia: ${attended ? 'Asistio' : 'No asistio'}'
+                                : 'Asistencia: pendiente de marcar',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          );
+                        },
+                      ),
+                    ] else ...[
+                      Builder(
+                        builder: (context) {
+                          final progress =
+                              progressByTraining[doc.id] ??
+                              const _VideoProgressState();
+                          final watchedAt = progress.watchedAt;
+                          final url = (video['youtubeUrl'] ?? '').toString();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  const _VideoStateChip(watched: true),
+                                  if (watchedAt != null)
+                                    _MetaBadgeUser(
+                                      icon: Icons.event_available_outlined,
+                                      label:
+                                          'Visto: ${DateFormat('dd/MM/yyyy HH:mm').format(watchedAt.toDate())}',
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              ElevatedButton.icon(
+                                onPressed: url.trim().isEmpty
+                                    ? null
+                                    : () {
+                                        HapticFeedback.selectionClick();
+                                        _openVideo(url);
+                                      },
+                                icon: const Icon(Icons.ondemand_video_outlined),
+                                label: const Text('Ver video'),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                    const SizedBox(height: 6),
+                    if (publishedAt != null)
+                      Text(
+                        '${status == 'published' ? 'Publicada' : 'Creada'}: ${_formatOptionalDate(publishedAt)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'ID: ${doc.id}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildVideoTrainingCard({
+    required QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    required _VideoProgressState progressState,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final data = doc.data();
+    final video = (data['video'] as Map<String, dynamic>?) ?? {};
+    final url = (video['youtubeUrl'] ?? '').toString();
+    final duration = video['durationMinutes'];
+    final topic = (data['topic'] ?? '').toString().trim();
+    final status = (data['status'] ?? 'published').toString();
+    final publishedAt =
+        (data['publishedAt'] as Timestamp?) ??
+        (data['createdAt'] as Timestamp?);
+    final isCancelled = status == 'cancelled';
+    final watched = progressState.watched;
+    final watchedAt = progressState.watchedAt;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: 0.8,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: scheme.outline.withValues(alpha: 0.18)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: isCancelled ? null : () => _openVideo(url),
+              child: _YoutubeThumbnail(youtubeUrl: url),
+            ),
+            const SizedBox(height: 12),
+            const _MetaBadgeUser(
+              icon: Icons.ondemand_video_outlined,
+              label: 'Contenido en línea',
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    (data['title'] ?? 'Capacitación en línea').toString(),
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                _StatusBadgeUser(status: status),
+              ],
+            ),
+            if (publishedAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${status == 'published' ? 'Publicada' : 'Creada'}: ${_formatOptionalDate(publishedAt)}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+            if (topic.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                topic,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.14),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    (data['description'] ?? '').toString(),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(height: 1.35),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isCancelled
+                        ? 'Capacitacion cancelada.'
+                        : 'Toca la portada o usa el boton para ver el video.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: isCancelled
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _VideoStateChip(watched: watched),
+                if (duration != null)
+                  _MetaBadgeUser(
+                    icon: Icons.schedule_outlined,
+                    label: '$duration min',
+                  ),
+                if (watchedAt != null)
+                  _MetaBadgeUser(
+                    icon: Icons.event_available_outlined,
+                    label:
+                        'Visto: ${DateFormat('dd/MM/yyyy HH:mm').format(watchedAt.toDate())}',
+                  ),
+              ],
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: scheme.outline.withValues(alpha: 0.14),
+                ),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: isCancelled
+                        ? null
+                        : () {
+                            HapticFeedback.selectionClick();
+                            _openVideo(url);
+                          },
+                    icon: const Icon(Icons.ondemand_video_outlined),
+                    label: const Text('Ver video'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: isCancelled || watched
+                        ? null
+                        : () async {
+                            HapticFeedback.selectionClick();
+                            final success = await _markWatched(doc.id);
+                            if (success && mounted) {
+                              setState(() {});
+                            }
+                          },
+                    style: watched
+                        ? OutlinedButton.styleFrom(
+                            foregroundColor: Colors.green.shade700,
+                            disabledForegroundColor: Colors.green.shade700,
+                            side: BorderSide(
+                              color: Colors.green.withValues(alpha: 0.55),
+                            ),
+                            backgroundColor: Colors.green.withValues(
+                              alpha: 0.1,
+                            ),
+                          )
+                        : null,
+                    icon: Icon(
+                      watched
+                          ? Icons.check_circle_rounded
+                          : Icons.check_circle_outline,
+                    ),
+                    label: Text(watched ? 'Completado' : 'Marcar visto'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _sortByCreatedAtDesc(
+    QueryDocumentSnapshot<Map<String, dynamic>> a,
+    QueryDocumentSnapshot<Map<String, dynamic>> b,
+  ) {
+    final aTs = a.data()['createdAt'] as Timestamp?;
+    final bTs = b.data()['createdAt'] as Timestamp?;
+    final aDate = aTs?.toDate();
+    final bDate = bTs?.toDate();
+    if (aDate == null && bDate == null) return 0;
+    if (aDate == null) return 1;
+    if (bDate == null) return -1;
+    return bDate.compareTo(aDate);
+  }
+
+  int _sortCompletedVideosByWatchedAtDesc(
+    QueryDocumentSnapshot<Map<String, dynamic>> a,
+    QueryDocumentSnapshot<Map<String, dynamic>> b,
+    Map<String, _VideoProgressState> progressByTraining,
+  ) {
+    final aWatchedAt = progressByTraining[a.id]?.watchedAt?.toDate();
+    final bWatchedAt = progressByTraining[b.id]?.watchedAt?.toDate();
+
+    if (aWatchedAt == null && bWatchedAt == null) {
+      return _sortByCreatedAtDesc(a, b);
+    }
+    if (aWatchedAt == null) return 1;
+    if (bWatchedAt == null) return -1;
+
+    final watchedCompare = bWatchedAt.compareTo(aWatchedAt);
+    if (watchedCompare != 0) return watchedCompare;
+    return _sortByCreatedAtDesc(a, b);
+  }
+
+  String _friendlyStreamError(Object? error) {
+    if (error is FirebaseException) {
+      final code = error.code.toLowerCase();
+      if (code == 'permission-denied') {
+        return 'No tienes permisos para ver estas capacitaciones.';
+      }
+      if (code == 'failed-precondition') {
+        return 'Falta una configuracion en Firestore para esta consulta.';
+      }
+      return error.message ?? 'Ocurrio un error al cargar datos.';
+    }
+    return 'Verifica tu conexion e intenta nuevamente.';
+  }
+
+  Widget _rsvpButton(
+    String trainingId,
+    String value,
+    String label,
+    String current, {
+    bool enabled = true,
+  }) {
+    final selected = current == value;
+    return ChoiceChip(
+      label: Text(label),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      selected: selected,
+      onSelected: enabled
+          ? (_) async {
+              HapticFeedback.selectionClick();
+              if (mounted) {
+                setState(() {
+                  _savingRsvpTrainingIds.add(trainingId);
+                });
+              }
+              try {
+                await _service.saveRsvp(
+                  trainingId: trainingId,
+                  response: value,
+                );
+              } on FirebaseException catch (e) {
+                if (!mounted) return;
+                if (e.code == 'already-exists') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        e.message ??
+                            'Tu confirmacion ya fue registrada y no puede modificarse.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final code = e.code.toUpperCase();
+                final message =
+                    e.message ?? 'No se pudo registrar tu respuesta.';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'No se pudo guardar confirmacion ($code): $message',
+                    ),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('No se pudo guardar confirmacion: $e'),
+                  ),
+                );
+              } finally {
+                if (mounted) {
+                  setState(() {
+                    _savingRsvpTrainingIds.remove(trainingId);
+                  });
+                }
+              }
+            }
+          : null,
+    );
+  }
+
+  Future<bool> _markWatched(String trainingId) async {
+    try {
+      final institutionId = _institutionId ?? '';
+      final uid = _currentUid ?? '';
+      if (kDebugMode) {
+        debugPrint(
+          '[Trainings][progress-write] institutionId=$institutionId trainingId=$trainingId uid=$uid path=institutions/$institutionId/trainings/$trainingId/progress/$uid',
+        );
+      }
+      await _service.markVideoWatched(trainingId);
+      if (!mounted) return true;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video marcado como visto.')),
+      );
+      return true;
+    } on FirebaseException catch (e) {
+      if (!mounted) return false;
+      final code = e.code.toUpperCase();
+      final message = e.message ?? 'No se pudo actualizar el progreso.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo marcar como visto ($code): $message'),
+        ),
+      );
+      return false;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo marcar como visto: $e')),
+      );
+      return false;
+    }
+  }
+
+  Future<void> _openVideo(String url) async {
+    final uri = _resolveExternalUri(url);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('URL de video inválida.')));
+      return;
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.open_in_browser_outlined),
+                  title: const Text('Ver aqui en la app'),
+                  subtitle: const Text('Abre el video en una vista interna'),
+                  onTap: () async {
+                    HapticFeedback.selectionClick();
+                    Navigator.pop(sheetContext);
+                    await _openUrlWithMode(
+                      uri,
+                      preferredMode: LaunchMode.inAppWebView,
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.ondemand_video_outlined),
+                  title: const Text('Abrir en YouTube'),
+                  subtitle: const Text('Abre la app o navegador externo'),
+                  onTap: () async {
+                    HapticFeedback.selectionClick();
+                    Navigator.pop(sheetContext);
+                    await _openUrlWithMode(
+                      uri,
+                      preferredMode: LaunchMode.externalApplication,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openMeetingLink(String url) async {
+    final uri = _resolveExternalUri(url);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enlace de reunión inválido.')),
+      );
+      return;
+    }
+    await _openUrlWithMode(uri, preferredMode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openUrlWithMode(
+    Uri uri, {
+    required LaunchMode preferredMode,
+  }) async {
+    final modesToTry = <LaunchMode>[
+      preferredMode,
+      if (preferredMode != LaunchMode.inAppWebView) LaunchMode.inAppWebView,
+      if (preferredMode != LaunchMode.inAppBrowserView)
+        LaunchMode.inAppBrowserView,
+      if (preferredMode != LaunchMode.externalApplication)
+        LaunchMode.externalApplication,
+    ];
+
+    for (final mode in modesToTry) {
+      try {
+        final launched = await launchUrl(uri, mode: mode);
+        if (launched) {
+          if (mode == LaunchMode.externalApplication &&
+              preferredMode != LaunchMode.externalApplication) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Se abrio el contenido en una aplicacion externa.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      } catch (_) {
+        // Intenta el siguiente modo disponible.
+      }
+    }
+
+    await _copyExternalLink(uri.toString());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'No se pudo abrir el contenido. El enlace fue copiado al portapapeles.',
+        ),
+      ),
+    );
+  }
+
+  Uri? _resolveExternalUri(String rawUrl) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Uri.tryParse(trimmed);
+    }
+
+    if (trimmed.startsWith('//')) {
+      return Uri.tryParse('https:$trimmed');
+    }
+
+    return Uri.tryParse('https://$trimmed');
+  }
+
+  Future<void> _copyExternalLink(String url) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: url));
+    } catch (_) {
+      // Ignora fallos del portapapeles.
+    }
+  }
+
+  String _labelResponse(String response) {
+    switch (response) {
+      case 'yes':
+        return 'Asistir';
+      case 'no':
+        return 'No puedo';
+      case 'maybe':
+        return 'Quizas';
+      default:
+        return response;
+    }
+  }
+
+  int _sortScheduledForUser(
+    QueryDocumentSnapshot<Map<String, dynamic>> a,
+    QueryDocumentSnapshot<Map<String, dynamic>> b,
+  ) {
+    final now = DateTime.now();
+    final aScheduled = (a.data()['scheduled'] as Map<String, dynamic>?) ?? {};
+    final bScheduled = (b.data()['scheduled'] as Map<String, dynamic>?) ?? {};
+    final aStart = (aScheduled['startAt'] as Timestamp?)?.toDate();
+    final bStart = (bScheduled['startAt'] as Timestamp?)?.toDate();
+    final aEnd = (aScheduled['endAt'] as Timestamp?)?.toDate();
+    final bEnd = (bScheduled['endAt'] as Timestamp?)?.toDate();
+
+    final bucketCompare = _bucketForUser(
+      startAt: aStart,
+      endAt: aEnd,
+      now: now,
+    ).compareTo(_bucketForUser(startAt: bStart, endAt: bEnd, now: now));
+    if (bucketCompare != 0) return bucketCompare;
+
+    if (aStart == null && bStart == null) return 0;
+    if (aStart == null) return 1;
+    if (bStart == null) return -1;
+    return aStart.compareTo(bStart);
+  }
+
+  int _bucketForUser({
+    required DateTime? startAt,
+    required DateTime? endAt,
+    required DateTime now,
+  }) {
+    if (startAt == null) return 1;
+    if (endAt != null && endAt.isBefore(now)) return 2;
+    final diff = startAt.difference(now);
+    if (!diff.isNegative && diff <= const Duration(hours: 24)) return 0;
+    if (!diff.isNegative) return 1;
+    return 2;
+  }
+
+  String _formatFriendlyRange(Timestamp? startAt, Timestamp? endAt) {
+    if (startAt == null) return 'Fecha por definir';
+    final start = startAt.toDate();
+    final startText = _formatFriendlyDate(start);
+    if (endAt == null) return startText;
+    final end = endAt.toDate();
+    final endText = DateFormat('HH:mm').format(end);
+    return '$startText - $endText';
+  }
+
+  String _formatFriendlyDate(DateTime value) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(value.year, value.month, value.day);
+    if (date == today) {
+      return 'Hoy ${DateFormat('HH:mm').format(value)}';
+    }
+    if (date == today.add(const Duration(days: 1))) {
+      return 'Manana ${DateFormat('HH:mm').format(value)}';
+    }
+    return DateFormat('dd MMM HH:mm').format(value);
+  }
+
+  String _formatOptionalDate(Timestamp? ts) {
+    if (ts == null) return 'Sin fecha';
+    return DateFormat('dd/MM/yyyy HH:mm').format(ts.toDate());
+  }
+
+  Widget? _buildTimeStateBadge({
+    required DateTime? startAt,
+    required DateTime? endAt,
+    required DateTime now,
+  }) {
+    if (startAt == null) return null;
+    if (endAt != null && endAt.isBefore(now)) {
+      return const _MetaBadgeUser(
+        icon: Icons.check_circle_outline,
+        label: 'Finalizada',
+        color: Colors.grey,
+      );
+    }
+    final diff = startAt.difference(now);
+    if (diff.isNegative) return null;
+    if (_isSameDay(startAt, now)) {
+      return const _MetaBadgeUser(
+        icon: Icons.today_outlined,
+        label: 'Hoy',
+        color: Colors.orange,
+      );
+    }
+    if (diff <= const Duration(hours: 24)) {
+      return const _MetaBadgeUser(
+        icon: Icons.notifications_active_outlined,
+        label: 'Proxima',
+        color: Colors.orange,
+      );
+    }
+    return null;
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  Widget _buildTrainingsScreenSkeleton() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      children: [
+        const AppSkeletonBox(
+          height: 118,
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+        const SizedBox(height: 10),
+        const AppSkeletonBox(
+          height: 46,
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+        ),
+        const SizedBox(height: 12),
+        ...List.generate(
+          3,
+          (index) => const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: AppSkeletonBox(
+              height: 182,
+              borderRadius: BorderRadius.all(Radius.circular(14)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTrainingsListSkeleton() {
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: List.generate(
+        3,
+        (index) => const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: AppSkeletonBox(
+            height: 178,
+            borderRadius: BorderRadius.all(Radius.circular(14)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 48, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(
+    BuildContext context, {
+    required String title,
+    required String subtitle,
+    required VoidCallback onRetry,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.wifi_off_outlined, size: 46, color: scheme.error),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _TrainingListItem {
-  final String trainingId;
-  final String title;
-  final String type;
-  final int duration;
-  final String status;
-  final int progress;
-  final String actionLabel;
-  final Map<String, dynamic> data;
+class _VideoProgressMetrics {
+  final int watchedCount;
+  final int totalCount;
 
-  const _TrainingListItem({
-    required this.trainingId,
-    required this.title,
-    required this.type,
-    required this.duration,
-    required this.status,
-    required this.progress,
-    required this.actionLabel,
-    required this.data,
+  const _VideoProgressMetrics({
+    required this.watchedCount,
+    required this.totalCount,
   });
 }
 
-class _TrainingCard extends StatelessWidget {
-  final String title;
-  final String type;
-  final int duration;
-  final String status;
-  final int progress;
-  final String actionLabel;
-  final VoidCallback onTap;
+class _VideoProgressState {
+  final bool watched;
+  final Timestamp? watchedAt;
 
-  const _TrainingCard({
-    required this.title,
-    required this.type,
-    required this.duration,
-    required this.status,
-    required this.progress,
-    required this.actionLabel,
-    required this.onTap,
+  const _VideoProgressState({this.watched = false, this.watchedAt});
+}
+
+class _VideoProgressSummary extends StatelessWidget {
+  final int watchedCount;
+  final int totalCount;
+  final bool loading;
+
+  const _VideoProgressSummary({
+    required this.watchedCount,
+    required this.totalCount,
+    required this.loading,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final progress = totalCount == 0 ? 0.0 : watchedCount / totalCount;
+    final remaining = (totalCount - watchedCount).clamp(0, totalCount);
+    final percent = totalCount == 0 ? 0 : (progress * 100).round();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outline.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Tu progreso en capacitaciones',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (loading)
+                SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: scheme.primary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  totalCount == 0
+                      ? 'Aún no hay capacitaciones en línea'
+                      : '$watchedCount de $totalCount completadas • $percent% • Restantes: $remaining',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (totalCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$percent%',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: progress,
+              color: scheme.primary,
+              backgroundColor: scheme.surfaceContainerHighest.withValues(
+                alpha: 0.95,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VideoStateChip extends StatelessWidget {
+  final bool watched;
+  const _VideoStateChip({required this.watched});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = watched ? Colors.green : Colors.grey;
+    final label = watched ? 'Visto' : 'Pendiente';
+    final icon = watched ? Icons.check_circle_rounded : Icons.schedule_outlined;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBadgeUser extends StatelessWidget {
+  final String status;
+  const _StatusBadgeUser({required this.status});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        title: Text(title),
-        subtitle: Text('$type | $duration min | $status'),
-        trailing: SizedBox(
-          width: 92,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '$progress%',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                actionLabel,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ],
-          ),
+    late final String label;
+    late final Color color;
+    switch (status) {
+      case 'published':
+        label = 'Publicado';
+        color = Colors.green;
+        break;
+      case 'cancelled':
+        label = 'Cancelado';
+        color = scheme.error;
+        break;
+      default:
+        label = 'Borrador';
+        color = scheme.outline;
+        break;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
         ),
-        onTap: onTap,
       ),
     );
   }
 }
 
-class _CatalogCard extends StatelessWidget {
-  final String title;
-  final String category;
-  final int duration;
-  final String contentType;
-  final VoidCallback onTap;
-
-  const _CatalogCard({
-    required this.title,
-    required this.category,
-    required this.duration,
-    required this.contentType,
-    required this.onTap,
-  });
+class _MetaBadgeUser extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  const _MetaBadgeUser({required this.icon, required this.label, this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        title: Text(title),
-        subtitle: Text('$category | ${contentType.toUpperCase()} | $duration min'),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
+    final resolved = color ?? Theme.of(context).colorScheme.onSurfaceVariant;
+    return AppMetaChip(
+      icon: icon,
+      label: label,
+      background: resolved.withValues(alpha: 0.12),
+      foreground: resolved,
+    );
+  }
+}
+
+class _YoutubeThumbnail extends StatefulWidget {
+  final String youtubeUrl;
+  const _YoutubeThumbnail({required this.youtubeUrl});
+
+  @override
+  State<_YoutubeThumbnail> createState() => _YoutubeThumbnailState();
+}
+
+class _YoutubeThumbnailState extends State<_YoutubeThumbnail> {
+  bool _fallback = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final videoId = _extractYoutubeId(widget.youtubeUrl);
+    final primaryUrl = videoId == null || videoId.isEmpty
+        ? null
+        : 'https://img.youtube.com/vi/$videoId/maxresdefault.jpg';
+    final fallbackUrl = videoId == null || videoId.isEmpty
+        ? null
+        : 'https://img.youtube.com/vi/$videoId/hqdefault.jpg';
+    final currentUrl = _fallback ? fallbackUrl : primaryUrl;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+              child: currentUrl == null
+                  ? Center(
+                      child: Icon(
+                        Icons.ondemand_video_outlined,
+                        size: 44,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    )
+                  : Image.network(
+                      currentUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      errorBuilder: (_, __, ___) {
+                        if (!_fallback && fallbackUrl != null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) setState(() => _fallback = true);
+                          });
+                        }
+                        return Center(
+                          child: Icon(
+                            Icons.ondemand_video_outlined,
+                            size: 44,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Container(
+              height: 56,
+              width: 56,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 34,
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  String? _extractYoutubeId(String url) {
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return null;
+    final host = uri.host.toLowerCase();
+    if (host.contains('youtu.be')) {
+      if (uri.pathSegments.isNotEmpty) return uri.pathSegments.first;
+      return null;
+    }
+    if (host.contains('youtube.com')) {
+      final fromQuery = uri.queryParameters['v'];
+      if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+      final segments = uri.pathSegments;
+      final embedIndex = segments.indexOf('embed');
+      if (embedIndex != -1 && segments.length > embedIndex + 1) {
+        return segments[embedIndex + 1];
+      }
+      final shortsIndex = segments.indexOf('shorts');
+      if (shortsIndex != -1 && segments.length > shortsIndex + 1) {
+        return segments[shortsIndex + 1];
+      }
+    }
+    return null;
   }
 }

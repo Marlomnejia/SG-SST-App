@@ -121,15 +121,12 @@ class _TrainingFormScreenState extends State<TrainingFormScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.trainingId == null
-            ? 'Nueva capacitacion'
-            : 'Editar capacitacion'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _save,
-          ),
-        ],
+        title: Text(
+          widget.trainingId == null
+              ? 'Nueva capacitacion'
+              : 'Editar capacitacion',
+        ),
+        actions: [IconButton(icon: const Icon(Icons.save), onPressed: _save)],
       ),
       body: Form(
         key: _formKey,
@@ -161,17 +158,21 @@ class _TrainingFormScreenState extends State<TrainingFormScreen> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _categoryController,
-              decoration: const InputDecoration(labelText: 'Categoria de riesgo'),
+              decoration: const InputDecoration(
+                labelText: 'Categoria de riesgo',
+              ),
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _durationController,
-              decoration: const InputDecoration(labelText: 'Duracion (minutos)'),
+              decoration: const InputDecoration(
+                labelText: 'Duracion (minutos)',
+              ),
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _contentType,
+              initialValue: _contentType,
               decoration: const InputDecoration(labelText: 'Tipo de contenido'),
               items: const [
                 DropdownMenuItem(value: 'text', child: Text('Lectura')),
@@ -189,7 +190,9 @@ class _TrainingFormScreenState extends State<TrainingFormScreen> {
             if (_contentType == 'text')
               TextFormField(
                 controller: _contentTextController,
-                decoration: const InputDecoration(labelText: 'Contenido (texto)'),
+                decoration: const InputDecoration(
+                  labelText: 'Contenido (texto)',
+                ),
                 maxLines: 4,
               )
             else
@@ -228,7 +231,9 @@ class _TrainingFormScreenState extends State<TrainingFormScreen> {
             const SizedBox(height: 12),
             TextFormField(
               initialValue: _attemptsAllowed.toString(),
-              decoration: const InputDecoration(labelText: 'Intentos permitidos'),
+              decoration: const InputDecoration(
+                labelText: 'Intentos permitidos',
+              ),
               keyboardType: TextInputType.number,
               onChanged: (value) {
                 _attemptsAllowed = int.tryParse(value) ?? _attemptsAllowed;
@@ -252,10 +257,7 @@ class _TrainingFormScreenState extends State<TrainingFormScreen> {
               },
             ),
             const SizedBox(height: 20),
-            Text(
-              'Quiz',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text('Quiz', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             ..._quiz.asMap().entries.map((entry) {
               final index = entry.key;
@@ -264,7 +266,9 @@ class _TrainingFormScreenState extends State<TrainingFormScreen> {
               return Card(
                 child: ListTile(
                   title: Text(question),
-                  subtitle: Text('Opciones: ${(item['options'] as List).length}'),
+                  subtitle: Text(
+                    'Opciones: ${(item['options'] as List).length}',
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () => _removeQuizItem(index),
@@ -331,8 +335,10 @@ class _QuizDialogState extends State<_QuizDialog> {
             }),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: _correctIndex,
-              decoration: const InputDecoration(labelText: 'Respuesta correcta'),
+              initialValue: _correctIndex,
+              decoration: const InputDecoration(
+                labelText: 'Respuesta correcta',
+              ),
               items: List.generate(
                 _optionControllers.length,
                 (index) => DropdownMenuItem(

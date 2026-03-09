@@ -35,9 +35,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       await _authService.sendPasswordResetEmail(_emailController.text.trim());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Enlace enviado. Revisa tu correo.'),
-          ),
+          const SnackBar(content: Text('Enlace enviado. Revisa tu correo.')),
         );
         Navigator.pop(context);
       }
@@ -64,18 +62,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Recuperar contrasena'),
-      ),
+      appBar: AppBar(title: const Text('Recuperar contraseña')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
@@ -98,7 +94,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       Text(
                         'Restablecer acceso',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: scheme.primary,
                             ),
@@ -108,8 +105,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                         'Ingresa tu correo para recibir el enlace.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       TextFormField(

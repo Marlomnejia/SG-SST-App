@@ -1,14 +1,16 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'incident_detail_screen.dart';
+
 import '../services/event_service.dart';
+import 'incident_detail_screen.dart';
 
 class IncidentManagementScreen extends StatefulWidget {
   const IncidentManagementScreen({super.key});
 
   @override
-  _IncidentManagementScreenState createState() => _IncidentManagementScreenState();
+  State<IncidentManagementScreen> createState() =>
+      _IncidentManagementScreenState();
 }
 
 class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
@@ -16,6 +18,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
   Stream<QuerySnapshot>? _incidentsStream;
   bool _isLoading = true;
   String? _error;
+  _IncidentFilter _selectedFilter = _IncidentFilter.open;
 
   @override
   void initState() {
@@ -49,11 +52,9 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Gestión de incidentes'),
-      ),
+      appBar: AppBar(title: const Text('Gestión de incidentes')),
       body: _buildBody(scheme),
     );
   }
@@ -114,10 +115,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
                 children: [
                   Icon(Icons.error_outline, size: 48, color: scheme.error),
                   const SizedBox(height: 16),
-                  Text(
-                    'Error: ${snapshot.error}',
-                    textAlign: TextAlign.center,
-                  ),
+                  Text('Error: ${snapshot.error}', textAlign: TextAlign.center),
                 ],
               ),
             ),
@@ -143,119 +141,311 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
           );
         }
 
-        final incidents = snapshot.data!.docs;
+        final incidents = snapshot.data!.docs.toList();
+        incidents.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aStatus = _statusPriority(_normalizedStatus(aData));
+          final bStatus = _statusPriority(_normalizedStatus(bData));
+          if (_selectedFilter == _IncidentFilter.all && aStatus != bStatus) {
+            return aStatus.compareTo(bStatus);
+          }
+          return _reportDate(bData).compareTo(_reportDate(aData));
+        });
 
-        return ListView.builder(
-          itemCount: incidents.length,
-          itemBuilder: (context, index) {
-            final incident = incidents[index];
-            final data = incident.data() as Map<String, dynamic>;
+        final filteredIncidents = incidents.where((incident) {
+          final data = incident.data() as Map<String, dynamic>;
+          return _matchesFilter(_normalizedStatus(data));
+        }).toList();
 
-            final String tipo = data['tipo'] ?? 'No especificado';
-            final String descripcion = data['descripcion'] ?? 'Sin descripcion';
-            final String reportadoPor = data['reportadoPor_email'] ?? 'Anonimo';
-            final Timestamp timestamp = data['fechaReporte'] ?? Timestamp.now();
-            final String estado = data['estado'] ?? 'desconocido';
-            final String lugar = data['lugar'] ?? 'Sin lugar';
-            final String categoria = data['categoria'] ?? 'Sin categoria';
-            final String severidad = data['severidad'] ?? 'Sin severidad';
+        final openCount = incidents.where((incident) {
+          final data = incident.data() as Map<String, dynamic>;
+          return _isOpenStatus(_normalizedStatus(data));
+        }).length;
+        final closedCount = incidents.length - openCount;
 
-            final DateTime fechaReporte = timestamp.toDate();
-            final String fechaFormateada =
-                DateFormat('dd/MM/yyyy, hh:mm a').format(fechaReporte);
-
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-              ),
-              child: ListTile(
-                leading: Icon(
-                  tipo == 'Accidente' ? Icons.warning : Icons.report_problem,
-                  color: tipo == 'Accidente' ? scheme.error : scheme.tertiary,
-                ),
-                title: Text(descripcion, maxLines: 2, overflow: TextOverflow.ellipsis),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('$reportadoPor - $fechaFormateada'),
-                    Text(lugar),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _buildMetaChip(context, categoria),
-                        _buildMetaChip(context, severidad, isSeverity: true),
-                      ],
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _IncidentFilter.values
+                          .map(
+                            (filter) => Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ChoiceChip(
+                                label: Text(_filterLabel(filter)),
+                                selected: _selectedFilter == filter,
+                                onSelected: (_) {
+                                  setState(() => _selectedFilter = filter);
+                                },
+                              ),
+                            ),
+                          )
+                          .toList(),
                     ),
-                  ],
-                ),
-                trailing: Chip(
-                  label: Text(
-                    estado,
-                    style: TextStyle(color: _getStatusTextColor(estado, scheme)),
                   ),
-                  backgroundColor: _getStatusColor(estado, scheme),
-                ),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          IncidentDetailScreen(eventDocument: incident),
+                  const SizedBox(height: 10),
+                  Text(
+                    _summaryLabel(
+                      filter: _selectedFilter,
+                      visibleCount: filteredIncidents.length,
+                      openCount: openCount,
+                      closedCount: closedCount,
                     ),
-                  );
-                },
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-            );
-          },
+            ),
+            Expanded(
+              child: filteredIncidents.isEmpty
+                  ? _buildFilteredEmptyState(context, scheme)
+                  : _selectedFilter == _IncidentFilter.all
+                  ? _buildSectionedList(context, scheme, filteredIncidents)
+                  : ListView.builder(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      itemCount: filteredIncidents.length,
+                      itemBuilder: (context, index) => _buildIncidentCard(
+                        context,
+                        scheme,
+                        filteredIncidents[index],
+                      ),
+                    ),
+            ),
+          ],
         );
       },
     );
   }
 
+  Widget _buildSectionedList(
+    BuildContext context,
+    ColorScheme scheme,
+    List<QueryDocumentSnapshot<Object?>> incidents,
+  ) {
+    final openItems = incidents.where((incident) {
+      final data = incident.data() as Map<String, dynamic>;
+      return _isOpenStatus(_normalizedStatus(data));
+    }).toList();
+    final closedItems = incidents.where((incident) {
+      final data = incident.data() as Map<String, dynamic>;
+      return !_isOpenStatus(_normalizedStatus(data));
+    }).toList();
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        if (openItems.isNotEmpty) ...[
+          _buildSectionHeader(context, 'Casos abiertos', openItems.length),
+          ...openItems.map(
+            (incident) => _buildIncidentCard(context, scheme, incident),
+          ),
+        ],
+        if (closedItems.isNotEmpty) ...[
+          _buildSectionHeader(
+            context,
+            'Cerrados y rechazados',
+            closedItems.length,
+          ),
+          ...closedItems.map(
+            (incident) => _buildIncidentCard(context, scheme, incident),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title, int count) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Text(
+              '$count',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilteredEmptyState(BuildContext context, ColorScheme scheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.filter_alt_off_outlined,
+              size: 48,
+              color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No hay incidentes para este filtro.',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Prueba con otra vista para revisar más casos.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncidentCard(
+    BuildContext context,
+    ColorScheme scheme,
+    QueryDocumentSnapshot<Object?> incident,
+  ) {
+    final data = incident.data() as Map<String, dynamic>;
+
+    final tipo = (data['eventType'] ?? data['tipo'] ?? 'No especificado')
+        .toString();
+    final descripcion =
+        (data['descripcion'] ?? data['description'] ?? 'Sin descripción')
+            .toString();
+    final reportadoPor =
+        (data['reportadoPor_email'] ?? data['createdByEmail'] ?? 'Anónimo')
+            .toString();
+    final estado = _normalizedStatus(data);
+    final lugar = _resolveLugar(data);
+    final categoria =
+        (data['reportType'] ?? data['categoria'] ?? 'Sin categoría').toString();
+    final severidad = (data['severity'] ?? data['severidad'] ?? 'Sin severidad')
+        .toString();
+    final fechaFormateada = DateFormat(
+      'dd/MM/yyyy, hh:mm a',
+    ).format(_reportDate(data));
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      color: scheme.surfaceContainerHighest,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: ListTile(
+        leading: Icon(
+          tipo == 'Accidente' ? Icons.warning : Icons.report_problem,
+          color: tipo == 'Accidente' ? scheme.error : scheme.tertiary,
+        ),
+        title: Text(descripcion, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$reportadoPor - $fechaFormateada'),
+            Text(lugar),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _buildMetaChip(context, categoria),
+                _buildMetaChip(context, severidad, isSeverity: true),
+              ],
+            ),
+          ],
+        ),
+        trailing: Chip(
+          label: Text(
+            EventService.statusLabel(estado),
+            style: TextStyle(color: _getStatusTextColor(estado, scheme)),
+          ),
+          backgroundColor: _getStatusColor(estado, scheme),
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  IncidentDetailScreen(eventDocument: incident),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Color _getStatusColor(String status, ColorScheme scheme) {
-    final normalized = status.toLowerCase();
-    if (normalized.contains('revisi')) {
-      return scheme.tertiary;
-    }
-    switch (normalized) {
+    switch (EventService.canonicalStatus(status)) {
       case 'reportado':
         return scheme.primary;
-      case 'resuelto':
-      case 'solucionado':
+      case 'en_revision':
+        return scheme.tertiary;
+      case 'en_proceso':
         return scheme.secondary;
+      case 'cerrado':
+        return scheme.secondaryContainer;
+      case 'rechazado':
+        return scheme.errorContainer;
       default:
         return scheme.outline;
     }
   }
 
   Color _getStatusTextColor(String status, ColorScheme scheme) {
-    final normalized = status.toLowerCase();
-    if (normalized.contains('revisi')) {
-      return scheme.onTertiary;
-    }
-    switch (normalized) {
+    switch (EventService.canonicalStatus(status)) {
       case 'reportado':
         return scheme.onPrimary;
-      case 'resuelto':
-      case 'solucionado':
+      case 'en_revision':
+        return scheme.onTertiary;
+      case 'en_proceso':
         return scheme.onSecondary;
+      case 'cerrado':
+        return scheme.onSecondaryContainer;
+      case 'rechazado':
+        return scheme.onErrorContainer;
       default:
         return scheme.onSurface;
     }
   }
 
-  Widget _buildMetaChip(BuildContext context, String label,
-      {bool isSeverity = false}) {
+  Widget _buildMetaChip(
+    BuildContext context,
+    String label, {
+    bool isSeverity = false,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    final String normalized = label.toLowerCase();
-    Color backgroundColor = scheme.surfaceContainerHigh;
-    Color textColor = scheme.onSurfaceVariant;
+    final normalized = label.toLowerCase();
+    var backgroundColor = scheme.surfaceContainerHigh;
+    var textColor = scheme.onSurfaceVariant;
 
     if (isSeverity) {
       if (normalized.contains('leve')) {
@@ -280,10 +470,111 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: textColor,
-              fontWeight: FontWeight.w600,
-            ),
+          color: textColor,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
+
+  String _resolveLugar(Map<String, dynamic> data) {
+    final location = data['location'];
+    if (location is Map<String, dynamic>) {
+      final place = (location['placeName'] ?? '').toString().trim();
+      final reference = (location['reference'] ?? '').toString().trim();
+      if (place.isNotEmpty && reference.isNotEmpty) {
+        return '$place / $reference';
+      }
+      if (place.isNotEmpty) {
+        return place;
+      }
+    }
+    return (data['lugar'] ?? 'Sin lugar').toString();
+  }
+
+  String _normalizedStatus(Map<String, dynamic> data) {
+    return EventService.canonicalStatus(
+      (data['status'] ?? data['estado'] ?? 'reportado').toString(),
+    );
+  }
+
+  DateTime _reportDate(Map<String, dynamic> data) {
+    final fechaReporte = data['fechaReporte'];
+    if (fechaReporte is Timestamp) return fechaReporte.toDate();
+    final createdAt = data['createdAt'];
+    if (createdAt is Timestamp) return createdAt.toDate();
+    final dateTime = data['datetime'];
+    if (dateTime is Timestamp) return dateTime.toDate();
+    return DateTime.now();
+  }
+
+  bool _isOpenStatus(String status) {
+    switch (status) {
+      case 'reportado':
+      case 'en_revision':
+      case 'en_proceso':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  int _statusPriority(String status) {
+    if (_isOpenStatus(status)) return 0;
+    if (status == 'cerrado') return 1;
+    if (status == 'rechazado') return 2;
+    return 3;
+  }
+
+  bool _matchesFilter(String status) {
+    switch (_selectedFilter) {
+      case _IncidentFilter.all:
+        return true;
+      case _IncidentFilter.open:
+        return _isOpenStatus(status);
+      case _IncidentFilter.inReview:
+        return status == 'en_revision';
+      case _IncidentFilter.inProgress:
+        return status == 'en_proceso';
+      case _IncidentFilter.closed:
+        return status == 'cerrado';
+      case _IncidentFilter.rejected:
+        return status == 'rechazado';
+    }
+  }
+
+  String _filterLabel(_IncidentFilter filter) {
+    switch (filter) {
+      case _IncidentFilter.all:
+        return 'Todos';
+      case _IncidentFilter.open:
+        return 'Abiertos';
+      case _IncidentFilter.inReview:
+        return 'En revisión';
+      case _IncidentFilter.inProgress:
+        return 'En proceso';
+      case _IncidentFilter.closed:
+        return 'Cerrados';
+      case _IncidentFilter.rejected:
+        return 'Rechazados';
+    }
+  }
+
+  String _summaryLabel({
+    required _IncidentFilter filter,
+    required int visibleCount,
+    required int openCount,
+    required int closedCount,
+  }) {
+    switch (filter) {
+      case _IncidentFilter.all:
+        return '$visibleCount casos en total. $openCount abiertos y $closedCount cerrados o rechazados.';
+      case _IncidentFilter.open:
+        return '$visibleCount casos abiertos, ordenados por fecha más reciente.';
+      default:
+        return '$visibleCount casos en la vista actual.';
+    }
+  }
 }
+
+enum _IncidentFilter { open, all, inReview, inProgress, closed, rejected }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/profile_service.dart';
 import '../services/user_service.dart';
+import '../widgets/app_meta_chip.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -26,6 +28,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _profileService = ProfileService();
   final _notificationService = NotificationService();
   final _picker = ImagePicker();
+  final Map<String, Future<String?>> _institutionNameFutures =
+      <String, Future<String?>>{};
 
   bool _isSaving = false;
   bool _isEditing = false;
@@ -34,6 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _notificationsEnabled = true;
   bool _isUploadingPhoto = false;
   bool _notificationRegistered = false;
+  Future<NotificationDiagnostic>? _notificationDiagnosticFuture;
 
   @override
   void dispose() {
@@ -135,8 +140,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
-      final String url =
-          await _profileService.uploadProfilePhoto(user.uid, picked);
+      final String url = await _profileService.uploadProfilePhoto(
+        user.uid,
+        picked,
+      );
       await user.updatePhotoURL(url);
       await _userService.updateUserProfile(user.uid, {'photoUrl': url});
       _showMessage('Foto actualizada.');
@@ -189,9 +196,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         } else {
           _notificationRegistered = true;
         }
+        _refreshNotificationDiagnostic();
       } else {
         await _notificationService.disableForUser(uid);
         _notificationRegistered = false;
+        _refreshNotificationDiagnostic();
       }
     } catch (e) {
       if (mounted) {
@@ -200,6 +209,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
       _showMessage('No se pudo actualizar la configuracion.');
+      _refreshNotificationDiagnostic();
     }
   }
 
@@ -216,14 +226,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       await user?.sendEmailVerification();
-      _showMessage('Correo de verificacion enviado.');
+      _showMessage('Correo de verificación enviado.');
     } catch (_) {
-      _showMessage('No se pudo enviar la verificacion.');
+      _showMessage('No se pudo enviar la verificación.');
     }
   }
 
   bool _isPasswordProvider(User user) {
-    return user.providerData.any((provider) => provider.providerId == 'password');
+    return user.providerData.any(
+      (provider) => provider.providerId == 'password',
+    );
   }
 
   Future<void> _showChangePasswordDialog(User user) async {
@@ -238,7 +250,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text('Cambiar contrasena'),
+              title: const Text('Cambiar contraseña'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -246,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: currentController,
                     obscureText: obscure,
                     decoration: const InputDecoration(
-                      labelText: 'Contrasena actual',
+                      labelText: 'Contraseña actual',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -254,7 +266,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: newController,
                     obscureText: obscure,
                     decoration: const InputDecoration(
-                      labelText: 'Nueva contrasena',
+                      labelText: 'Nueva contraseña',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -262,7 +274,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: confirmController,
                     obscureText: obscure,
                     decoration: const InputDecoration(
-                      labelText: 'Confirmar nueva contrasena',
+                      labelText: 'Confirmar nueva contraseña',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -297,11 +309,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       return;
                     }
                     if (next.length < 6) {
-                      _showMessage('La nueva contrasena es muy corta.');
+                      _showMessage('La nueva contraseña es muy corta.');
                       return;
                     }
                     if (next != confirm) {
-                      _showMessage('Las contrasenas no coinciden.');
+                      _showMessage('Las contraseñas no coinciden.');
                       return;
                     }
 
@@ -312,15 +324,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       );
                       await user.reauthenticateWithCredential(credential);
                       await user.updatePassword(next);
-                      if (mounted) {
+                      if (context.mounted) {
                         Navigator.pop(context);
                       }
-                      _showMessage('Contrasena actualizada.');
+                      _showMessage('Contraseña actualizada.');
                     } on FirebaseAuthException catch (e) {
                       if (e.code == 'wrong-password') {
-                        _showMessage('Contrasena actual incorrecta.');
+                        _showMessage('Contraseña actual incorrecta.');
                       } else {
-                        _showMessage('No se pudo actualizar la contrasena.');
+                        _showMessage('No se pudo actualizar la contraseña.');
                       }
                     }
                   },
@@ -371,13 +383,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _loadProfileData(Map<String, dynamic> data, {String? fallbackName}) {
+  void _loadProfileData(
+    Map<String, dynamic> data, {
+    String? fallbackName,
+    String? institutionName,
+    String? roleLabel,
+  }) {
     _displayNameController.text =
         (data['displayName'] ?? '').toString().trim().isNotEmpty
-            ? data['displayName']
-            : (fallbackName ?? '');
-    _jobTitleController.text = data['jobTitle'] ?? '';
-    _institutionController.text = data['institution'] ?? '';
+        ? data['displayName']
+        : (fallbackName ?? '');
+    _jobTitleController.text =
+        (data['jobTitle'] ?? '').toString().trim().isNotEmpty
+        ? data['jobTitle']
+        : (roleLabel ?? '');
+    _institutionController.text =
+        (data['institution'] ?? '').toString().trim().isNotEmpty
+        ? data['institution']
+        : (institutionName ?? '');
     _campusController.text = data['campus'] ?? '';
     _phoneController.text = data['phone'] ?? '';
     _notificationsEnabled = data['notificationsEnabled'] ?? true;
@@ -385,8 +408,240 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<NotificationDiagnostic> _notificationDiagnosticFor() {
+    _notificationDiagnosticFuture ??= _notificationService.getDiagnostic();
+    return _notificationDiagnosticFuture!;
+  }
+
+  void _refreshNotificationDiagnostic() {
+    _notificationDiagnosticFuture = _notificationService.getDiagnostic();
+  }
+
+  String _notificationPermissionLabel(AuthorizationStatus status) {
+    switch (status) {
+      case AuthorizationStatus.authorized:
+        return 'Permiso del sistema: otorgado';
+      case AuthorizationStatus.provisional:
+        return 'Permiso del sistema: provisional';
+      case AuthorizationStatus.denied:
+        return 'Permiso del sistema: denegado';
+      case AuthorizationStatus.notDetermined:
+        return 'Permiso del sistema: pendiente';
+    }
+  }
+
+  IconData _notificationPermissionIcon(AuthorizationStatus status) {
+    switch (status) {
+      case AuthorizationStatus.authorized:
+        return Icons.notifications_active_outlined;
+      case AuthorizationStatus.provisional:
+        return Icons.notifications_outlined;
+      case AuthorizationStatus.denied:
+        return Icons.notifications_off_outlined;
+      case AuthorizationStatus.notDetermined:
+        return Icons.help_outline;
+    }
+  }
+
+  Color _notificationPermissionBackground(
+    AuthorizationStatus status,
+    ColorScheme scheme,
+  ) {
+    switch (status) {
+      case AuthorizationStatus.authorized:
+        return scheme.secondaryContainer;
+      case AuthorizationStatus.provisional:
+        return scheme.tertiaryContainer;
+      case AuthorizationStatus.denied:
+        return scheme.errorContainer;
+      case AuthorizationStatus.notDetermined:
+        return scheme.surfaceContainerHigh;
+    }
+  }
+
+  Color _notificationPermissionForeground(
+    AuthorizationStatus status,
+    ColorScheme scheme,
+  ) {
+    switch (status) {
+      case AuthorizationStatus.authorized:
+        return scheme.onSecondaryContainer;
+      case AuthorizationStatus.provisional:
+        return scheme.onTertiaryContainer;
+      case AuthorizationStatus.denied:
+        return scheme.onErrorContainer;
+      case AuthorizationStatus.notDetermined:
+        return scheme.onSurfaceVariant;
+    }
+  }
+
+  Widget _buildNotificationDiagnosticCard(
+    BuildContext context, {
+    required Map<String, dynamic> data,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final registeredTokens = List<String>.from(data['fcmTokens'] ?? const []);
+
+    return FutureBuilder<NotificationDiagnostic>(
+      future: _notificationDiagnosticFor(),
+      builder: (context, snapshot) {
+        final diagnostic = snapshot.data;
+        final status =
+            diagnostic?.authorizationStatus ??
+            AuthorizationStatus.notDetermined;
+        final currentToken = diagnostic?.currentToken;
+        final currentDeviceRegistered =
+            currentToken != null && registeredTokens.contains(currentToken);
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: scheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Diagnostico de notificaciones',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Verifica si este dispositivo puede recibir alertas en segundo plano.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  AppMetaChip(
+                    icon: _notificationPermissionIcon(status),
+                    label: _notificationPermissionLabel(status),
+                    background: _notificationPermissionBackground(
+                      status,
+                      scheme,
+                    ),
+                    foreground: _notificationPermissionForeground(
+                      status,
+                      scheme,
+                    ),
+                  ),
+                  AppMetaChip(
+                    icon: _notificationsEnabled
+                        ? Icons.toggle_on_outlined
+                        : Icons.toggle_off_outlined,
+                    label: _notificationsEnabled
+                        ? 'Switch en la app: activo'
+                        : 'Switch en la app: inactivo',
+                    background: _notificationsEnabled
+                        ? scheme.primaryContainer
+                        : scheme.surfaceContainerHigh,
+                    foreground: _notificationsEnabled
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSurfaceVariant,
+                  ),
+                  AppMetaChip(
+                    icon: Icons.key_outlined,
+                    label: 'Tokens registrados: ${registeredTokens.length}',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                currentToken == null
+                    ? 'Este dispositivo aun no expone un token FCM.'
+                    : currentDeviceRegistered
+                    ? 'Este dispositivo ya esta registrado para recibir notificaciones.'
+                    : 'El dispositivo tiene token, pero aun no coincide con los tokens guardados en tu cuenta.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              if (snapshot.connectionState == ConnectionState.waiting) ...[
+                const SizedBox(height: 8),
+                const LinearProgressIndicator(minHeight: 3),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _syncReadOnlyProfileFields({
+    required Map<String, dynamic> data,
+    required String roleLabel,
+    String? institutionName,
+  }) {
+    final resolvedJobTitle =
+        (data['jobTitle'] ?? '').toString().trim().isNotEmpty
+        ? (data['jobTitle'] ?? '').toString().trim()
+        : roleLabel.trim();
+    if (resolvedJobTitle.isNotEmpty &&
+        _jobTitleController.text.trim() != resolvedJobTitle) {
+      _jobTitleController.text = resolvedJobTitle;
+    }
+
+    final resolvedInstitution = (institutionName ?? '').trim();
+    if (resolvedInstitution.isNotEmpty &&
+        _institutionController.text.trim() != resolvedInstitution) {
+      _institutionController.text = resolvedInstitution;
+    }
+  }
+
+  void _scheduleReadOnlyProfileFieldSync({
+    required Map<String, dynamic> data,
+    required String roleLabel,
+    String? institutionName,
+  }) {
+    if (_isEditing) {
+      return;
+    }
+
+    final resolvedJobTitle =
+        (data['jobTitle'] ?? '').toString().trim().isNotEmpty
+        ? (data['jobTitle'] ?? '').toString().trim()
+        : roleLabel.trim();
+    final resolvedInstitution = (institutionName ?? '').trim();
+    final needsSync =
+        (resolvedJobTitle.isNotEmpty &&
+            _jobTitleController.text.trim() != resolvedJobTitle) ||
+        (resolvedInstitution.isNotEmpty &&
+            _institutionController.text.trim() != resolvedInstitution);
+
+    if (!needsSync) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isEditing) {
+        return;
+      }
+      _syncReadOnlyProfileFields(
+        data: data,
+        roleLabel: roleLabel,
+        institutionName: institutionName,
+      );
+    });
+  }
+
+  Future<String?> _getInstitutionNameCached(String institutionId) {
+    return _institutionNameFutures.putIfAbsent(
+      institutionId,
+      () => _userService.getInstitutionName(institutionId),
     );
   }
 
@@ -426,188 +681,275 @@ class _ProfileScreenState extends State<ProfileScreen> {
           user.displayName,
           email,
         );
-        if (!_initialized && !_isEditing) {
-          _loadProfileData(
-            data,
-            fallbackName: displayName.isEmpty ? 'Usuario' : displayName,
-          );
-        }
+        final institutionId = (data['institutionId'] ?? '').toString().trim();
 
-        final scheme = Theme.of(context).colorScheme;
-        final String role = data['role'] ?? 'user';
-        final bool emailVerified = user.emailVerified;
-        final String initials = displayName.isNotEmpty
-            ? displayName.trim().split(' ').map((p) => p[0]).take(2).join()
-            : 'U';
-        final String? photoUrl = data['photoUrl'] ?? user.photoURL;
+        return FutureBuilder<String?>(
+          initialData: _resolveInstitutionLabel(data, null),
+          future: institutionId.isEmpty
+              ? Future<String?>.value(null)
+              : _getInstitutionNameCached(institutionId),
+          builder: (context, institutionSnap) {
+            final resolvedInstitutionName = _resolveInstitutionLabel(
+              data,
+              institutionSnap.data,
+            );
+            final String role = data['role'] ?? 'user';
+            final resolvedRoleLabel = _profileRoleLabel(role);
 
-        if (_notificationsEnabled && !_notificationRegistered) {
-          WidgetsBinding.instance.addPostFrameCallback((_) async {
-            final enabled = await _notificationService.enableForUser(user.uid);
-            if (mounted) {
-              setState(() {
-                _notificationRegistered = enabled;
-                if (!enabled) {
-                  _notificationsEnabled = false;
+            if (!_initialized && !_isEditing) {
+              _loadProfileData(
+                data,
+                fallbackName: displayName.isEmpty ? 'Usuario' : displayName,
+                institutionName: resolvedInstitutionName,
+                roleLabel: resolvedRoleLabel,
+              );
+            }
+            _scheduleReadOnlyProfileFieldSync(
+              data: data,
+              roleLabel: resolvedRoleLabel,
+              institutionName: resolvedInstitutionName,
+            );
+
+            final scheme = Theme.of(context).colorScheme;
+            final bool emailVerified = user.emailVerified;
+            final String initials = displayName.isNotEmpty
+                ? displayName.trim().split(' ').map((p) => p[0]).take(2).join()
+                : 'U';
+            final String? photoUrl = data['photoUrl'] ?? user.photoURL;
+
+            if (_notificationsEnabled && !_notificationRegistered) {
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                final enabled = await _notificationService.enableForUser(
+                  user.uid,
+                );
+                if (mounted) {
+                  setState(() {
+                    _notificationRegistered = enabled;
+                    if (!enabled) {
+                      _notificationsEnabled = false;
+                    }
+                  });
                 }
+                if (!enabled) {
+                  await _userService.setNotificationsEnabled(user.uid, false);
+                }
+                _refreshNotificationDiagnostic();
               });
             }
-            if (!enabled) {
-              await _userService.setNotificationsEnabled(user.uid, false);
-            }
-          });
-        }
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Perfil y configuracion'),
-            actions: [
-              IconButton(
-                icon: Icon(_isEditing ? Icons.close : Icons.edit),
-                tooltip: _isEditing ? 'Cancelar' : 'Editar',
-                onPressed: () {
-                  setState(() {
-                    if (_isEditing) {
-                      _loadProfileData(data);
-                    }
-                    _isEditing = !_isEditing;
-                  });
-                },
+            return Scaffold(
+              appBar: AppBar(
+                title: const Text('Mi perfil'),
+                actions: [
+                  IconButton(
+                    icon: Icon(_isEditing ? Icons.close : Icons.edit),
+                    tooltip: _isEditing ? 'Cancelar' : 'Editar',
+                    onPressed: () {
+                      setState(() {
+                        if (_isEditing) {
+                          _loadProfileData(
+                            data,
+                            institutionName: resolvedInstitutionName,
+                            roleLabel: resolvedRoleLabel,
+                          );
+                        }
+                        _isEditing = !_isEditing;
+                      });
+                    },
+                  ),
+                ],
               ),
-            ],
-          ),
-          body: Form(
-            key: _formKey,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _ProfileHeader(
-                  initials: initials,
-                  displayName: displayName.isEmpty ? 'Usuario' : displayName,
-                  email: email,
-                  role: role,
-                  photoUrl: photoUrl,
-                  isUploading: _isUploadingPhoto,
-                  onEditPhoto: () => _showPhotoOptions(user),
-                ),
-                const SizedBox(height: 24),
-                _SectionTitle(title: 'Informacion personal'),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _displayNameController,
-                  decoration: const InputDecoration(labelText: 'Nombre completo'),
-                  enabled: _isEditing,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Ingresa tu nombre.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _jobTitleController,
-                  decoration: const InputDecoration(labelText: 'Cargo'),
-                  enabled: _isEditing,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _institutionController,
-                  decoration: const InputDecoration(labelText: 'Institucion'),
-                  enabled: _isEditing,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _campusController,
-                  decoration: const InputDecoration(labelText: 'Sede'),
-                  enabled: _isEditing,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(labelText: 'Telefono'),
-                  enabled: _isEditing,
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 16),
-                if (_isEditing)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _isSaving ? null : () => _saveProfile(user.uid),
-                      child: _isSaving
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(),
-                            )
-                          : const Text('Guardar cambios'),
+              body: Form(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _ProfileHeader(
+                      initials: initials,
+                      displayName: displayName.isEmpty
+                          ? 'Usuario'
+                          : displayName,
+                      email: email,
+                      role: role,
+                      photoUrl: photoUrl,
+                      institutionName: resolvedInstitutionName,
+                      isUploading: _isUploadingPhoto,
+                      onEditPhoto: () => _showPhotoOptions(user),
                     ),
-                  ),
-                const SizedBox(height: 24),
-                _SectionTitle(title: 'Configuracion'),
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  value: _notificationsEnabled,
-                  title: const Text('Notificaciones'),
-                  subtitle: const Text('Alertas y novedades del SG-SST'),
-                  onChanged: (value) =>
-                      _toggleNotifications(user.uid, value),
+                    const SizedBox(height: 24),
+                    _SectionTitle(
+                      title: 'Perfil basico',
+                      subtitle:
+                          'Consulta y actualiza los datos principales de tu cuenta.',
+                    ),
+                    const SizedBox(height: 12),
+                    _SectionCard(
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _displayNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre completo',
+                            ),
+                            enabled: _isEditing,
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Ingresa tu nombre.';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _jobTitleController,
+                            readOnly: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Cargo general',
+                              helperText:
+                                  'Asignado segun tu rol en la plataforma',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _institutionController,
+                            readOnly: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Institucion',
+                              helperText: 'Vinculada a tu cuenta',
+                            ),
+                          ),
+                          if (_isEditing) ...[
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _isSaving
+                                    ? null
+                                    : () => _saveProfile(user.uid),
+                                child: _isSaving
+                                    ? const SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(),
+                                      )
+                                    : const Text('Guardar cambios'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _SectionTitle(
+                      title: 'Configuración',
+                      subtitle:
+                          'Controla las alertas y preferencias operativas de tu cuenta.',
+                    ),
+                    const SizedBox(height: 8),
+                    _SectionCard(
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            value: _notificationsEnabled,
+                            title: const Text('Notificaciones'),
+                            subtitle: const Text(
+                              'Alertas y novedades del SG-SST',
+                            ),
+                            onChanged: (value) =>
+                                _toggleNotifications(user.uid, value),
+                          ),
+                          const Divider(height: 18),
+                          _buildNotificationDiagnosticCard(context, data: data),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _SectionTitle(
+                      title: 'Seguridad',
+                      subtitle:
+                          'Revisa el acceso, verificación de correo y opciones de contraseña.',
+                    ),
+                    const SizedBox(height: 8),
+                    _SectionCard(
+                      child: Column(
+                        children: [
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.verified_user_outlined),
+                            title: Text(
+                              emailVerified
+                                  ? 'Correo verificado'
+                                  : 'Correo sin verificar',
+                            ),
+                            subtitle: Text(email),
+                            trailing: emailVerified
+                                ? const Icon(Icons.check, color: Colors.green)
+                                : TextButton(
+                                    onPressed: _sendEmailVerification,
+                                    child: const Text('Verificar'),
+                                  ),
+                          ),
+                          const Divider(height: 18),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.lock_outline),
+                            title: const Text('Cambiar contraseña'),
+                            subtitle: Text(
+                              _isPasswordProvider(user)
+                                  ? 'Actualiza tu contraseña'
+                                  : 'Tu acceso se gestiona con Google. Cambia la contraseña desde tu cuenta de Google.',
+                            ),
+                            onTap: _isPasswordProvider(user)
+                                ? () => _showChangePasswordDialog(user)
+                                : null,
+                          ),
+                          const Divider(height: 18),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.lock_reset),
+                            title: const Text('Restablecer contraseña'),
+                            subtitle: const Text('Envia un enlace al correo'),
+                            onTap: email.isEmpty
+                                ? null
+                                : () => _sendPasswordReset(email),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _SectionTitle(
+                      title: 'Sesión',
+                      subtitle: 'Gestiona el acceso de tu cuenta actual.',
+                    ),
+                    const SizedBox(height: 8),
+                    _SectionCard(
+                      child: Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _confirmLogout,
+                              icon: const Icon(Icons.logout),
+                              label: const Text('Cerrar sesion'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Version 1.0.0',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                _SectionTitle(title: 'Seguridad'),
-                const SizedBox(height: 8),
-                ListTile(
-                  leading: const Icon(Icons.verified_user_outlined),
-                  title: Text(emailVerified
-                      ? 'Correo verificado'
-                      : 'Correo sin verificar'),
-                  subtitle: Text(email),
-                  trailing: emailVerified
-                      ? const Icon(Icons.check, color: Colors.green)
-                      : TextButton(
-                          onPressed: _sendEmailVerification,
-                          child: const Text('Verificar'),
-                        ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.lock_outline),
-                  title: const Text('Cambiar contrasena'),
-                  subtitle: Text(
-                    _isPasswordProvider(user)
-                        ? 'Actualiza tu contrasena'
-                        : 'No disponible para este tipo de cuenta',
-                  ),
-                  onTap: _isPasswordProvider(user)
-                      ? () => _showChangePasswordDialog(user)
-                      : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.lock_reset),
-                  title: const Text('Restablecer contrasena'),
-                  subtitle: const Text('Envia un enlace al correo'),
-                  onTap: email.isEmpty ? null : () => _sendPasswordReset(email),
-                ),
-                const SizedBox(height: 16),
-                _SectionTitle(title: 'Sesion'),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _confirmLogout,
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Cerrar sesion'),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Version 1.0.0',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -620,6 +962,7 @@ class _ProfileHeader extends StatelessWidget {
   final String email;
   final String role;
   final String? photoUrl;
+  final String? institutionName;
   final VoidCallback onEditPhoto;
   final bool isUploading;
 
@@ -629,6 +972,7 @@ class _ProfileHeader extends StatelessWidget {
     required this.email,
     required this.role,
     this.photoUrl,
+    this.institutionName,
     required this.onEditPhoto,
     required this.isUploading,
   });
@@ -641,7 +985,7 @@ class _ProfileHeader extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            scheme.primary.withOpacity(0.18),
+            scheme.primary.withValues(alpha: 0.18),
             scheme.surfaceContainerHighest,
           ],
           begin: Alignment.topLeft,
@@ -652,12 +996,22 @@ class _ProfileHeader extends StatelessWidget {
       ),
       child: Column(
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AppMetaChip(
+              icon: Icons.manage_accounts_outlined,
+              label: 'Cuenta personal',
+              background: scheme.primary.withValues(alpha: 0.12),
+              foreground: scheme.primary,
+            ),
+          ),
+          const SizedBox(height: 14),
           Stack(
             alignment: Alignment.bottomRight,
             children: [
               CircleAvatar(
                 radius: 46,
-                backgroundColor: scheme.primary.withOpacity(0.15),
+                backgroundColor: scheme.primary.withValues(alpha: 0.15),
                 backgroundImage: photoUrl != null && photoUrl!.isNotEmpty
                     ? NetworkImage(photoUrl!)
                     : null,
@@ -706,32 +1060,79 @@ class _ProfileHeader extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             displayName,
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 4),
           Text(
             email,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
+          if (institutionName != null &&
+              institutionName!.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.school_outlined, size: 16, color: scheme.primary),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      institutionName!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: scheme.primary.withOpacity(0.12),
+              color: scheme.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Text(
-              role == 'admin' ? 'Administrador' : 'Usuario',
+              _profileRoleLabel(role),
               style: TextStyle(
                 color: scheme.primary,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: scheme.surface.withValues(alpha: 0.68),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: scheme.outlineVariant),
+            ),
+            child: Text(
+              'Aquí puedes revisar tu identidad, gestionar tus preferencias y mantener actualizada la información principal de tu cuenta.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
             ),
           ),
         ],
@@ -740,7 +1141,11 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-String _resolveDisplayName(String? firestoreName, String? authName, String email) {
+String _resolveDisplayName(
+  String? firestoreName,
+  String? authName,
+  String email,
+) {
   final String candidate = (firestoreName ?? '').trim().isNotEmpty
       ? firestoreName!.trim()
       : (authName ?? '').trim();
@@ -756,18 +1161,96 @@ String _resolveDisplayName(String? firestoreName, String? authName, String email
   return 'Usuario';
 }
 
+String? _resolveInstitutionLabel(
+  Map<String, dynamic> data,
+  String? lookedUpName,
+) {
+  final fetchedName = (lookedUpName ?? '').trim();
+  if (fetchedName.isNotEmpty) {
+    return fetchedName;
+  }
+
+  final directName = (data['institutionName'] ?? '').toString().trim();
+  if (directName.isNotEmpty) {
+    return directName;
+  }
+
+  final profileName = (data['institution'] ?? '').toString().trim();
+  if (profileName.isNotEmpty) {
+    return profileName;
+  }
+
+  return null;
+}
+
+String _profileRoleLabel(String role) {
+  switch (role) {
+    case 'admin':
+      return 'Administrador general';
+    case 'admin_sst':
+      return 'Coordinador SST';
+    default:
+      return 'Colaborador';
+  }
+}
+
 class _SectionTitle extends StatelessWidget {
   final String title;
+  final String? subtitle;
 
-  const _SectionTitle({required this.title});
+  const _SectionTitle({required this.title, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
             fontWeight: FontWeight.w700,
           ),
+        ),
+        if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            subtitle!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final Widget child;
+
+  const _SectionCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }

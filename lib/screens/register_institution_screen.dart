@@ -10,10 +10,7 @@ import 'social_onboarding_screen.dart';
 class RegisterInstitutionScreen extends StatefulWidget {
   final SocialUserData? socialUserData;
 
-  const RegisterInstitutionScreen({
-    super.key,
-    this.socialUserData,
-  });
+  const RegisterInstitutionScreen({super.key, this.socialUserData});
 
   @override
   State<RegisterInstitutionScreen> createState() =>
@@ -356,9 +353,9 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -436,18 +433,22 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
         ),
         Step(
           title: const Text('Documentos'),
-          subtitle: Text(_institutionType == InstitutionType.public
-              ? 'Cédula y Acta de Posesión'
-              : 'Cédula, Cámara de Comercio y RUT'),
+          subtitle: Text(
+            _institutionType == InstitutionType.public
+                ? 'Cédula y Acta de Posesión'
+                : 'Cédula, Cámara de Comercio y RUT',
+          ),
           isActive: _currentStep >= 2,
           state: _currentStep > 2 ? StepState.complete : StepState.indexed,
           content: _buildStep2Documents(scheme),
         ),
         Step(
           title: const Text('Administrador'),
-          subtitle: Text(_isSocialRegistration
-              ? 'Cargo del administrador'
-              : 'Datos del administrador'),
+          subtitle: Text(
+            _isSocialRegistration
+                ? 'Cargo del administrador'
+                : 'Datos del administrador',
+          ),
           isActive: _currentStep >= 3,
           state: StepState.indexed,
           content: _buildStep3AdminData(scheme),
@@ -513,7 +514,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           _isLoadingLocations
               ? const Center(child: CircularProgressIndicator())
               : DropdownButtonFormField<String>(
-                  value: _selectedDepartment,
+                  initialValue: _selectedDepartment,
                   decoration: const InputDecoration(
                     labelText: 'Departamento *',
                     prefixIcon: Icon(Icons.map_outlined),
@@ -537,7 +538,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           const SizedBox(height: 16),
           // Dropdown de Ciudad
           DropdownButtonFormField<String>(
-            value: _selectedCity,
+            initialValue: _selectedCity,
             decoration: const InputDecoration(
               labelText: 'Ciudad *',
               prefixIcon: Icon(Icons.location_city_outlined),
@@ -599,11 +600,12 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             scheme,
             icon: Icons.category_rounded,
             title: 'Tipo de Institución',
-            subtitle: 'Selecciona el tipo para determinar los documentos requeridos',
+            subtitle:
+                'Selecciona el tipo para determinar los documentos requeridos',
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<InstitutionType>(
-            value: _institutionType,
+            initialValue: _institutionType,
             decoration: const InputDecoration(
               labelText: 'Tipo de Institución *',
               prefixIcon: Icon(Icons.account_balance_outlined),
@@ -678,7 +680,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               labelText: 'Correo Electrónico *',
               prefixIcon: const Icon(Icons.email_outlined),
               hintText: 'Ej: rector@colegio.edu.co',
-              helperText: 'Se recomienda el uso de correo institucional si dispone de uno',
+              helperText:
+                  'Se recomienda el uso de correo institucional si dispone de uno',
               helperMaxLines: 2,
               suffixIcon: _isSocialRegistration
                   ? const Icon(Icons.lock_outline)
@@ -715,7 +718,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: scheme.primaryContainer.withOpacity(0.3),
+            color: scheme.primaryContainer.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -726,8 +729,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                 child: Text(
                   'Formatos permitidos: PDF, JPG, PNG. Máximo 5 MB por archivo.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
@@ -761,7 +764,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? Colors.green.withOpacity(0.1)
+                    ? Colors.green.withValues(alpha: 0.1)
                     : scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -780,8 +783,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                       Text(
                         type.displayName,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(width: 4),
                       Container(
@@ -790,7 +793,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: scheme.error.withOpacity(0.1),
+                          color: scheme.error.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -809,8 +812,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                     Text(
                       file.name,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                        color: scheme.onSurfaceVariant,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -948,7 +951,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withOpacity(0.5),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: scheme.outlineVariant),
       ),
@@ -971,15 +974,15 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               children: [
                 Text(
                   widget.socialUserData?.displayName ?? '',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 Text(
                   widget.socialUserData?.email ?? '',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -988,7 +991,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: (widget.socialUserData?.providerColor ?? Colors.green)
-                  .withOpacity(0.1),
+                  .withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -1025,7 +1028,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: scheme.primaryContainer.withOpacity(0.3),
+        color: scheme.primaryContainer.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -1039,15 +1042,15 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
-                      ),
+                    fontWeight: FontWeight.bold,
+                    color: scheme.primary,
+                  ),
                 ),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

@@ -45,8 +45,9 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
         _institutionId = user.institutionId;
         // Obtener nombre de institución
         if (_institutionId != null) {
-          final institution =
-              await _userService.getInstitutionName(_institutionId!);
+          final institution = await _userService.getInstitutionName(
+            _institutionId!,
+          );
           _institutionName = institution;
         }
       }
@@ -60,7 +61,9 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
   Future<void> _sendInvitation() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (_institutionId == null || _currentUserId == null) {
-      _showMessage('Error: No se pudo obtener la información de la institución');
+      _showMessage(
+        'Error: No se pudo obtener la información de la institución',
+      );
       return;
     }
 
@@ -130,7 +133,8 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
 
   Future<void> _openMailApp(String toEmail) async {
     final subject = Uri.encodeComponent(
-        'Invitación a ${_institutionName ?? "nuestra institución"} - SG-SST');
+      'Invitación a ${_institutionName ?? "nuestra institución"} - SG-SST',
+    );
     final body = Uri.encodeComponent(
       'Hola,\n\n'
       'Has sido invitado a unirte a ${_institutionName ?? "nuestra institución"} '
@@ -159,9 +163,9 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -169,9 +173,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Invitar Empleados'),
-      ),
+      appBar: AppBar(title: const Text('Invitar Empleados')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -180,25 +182,21 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Header
-                  Icon(
-                    Icons.person_add_alt_1,
-                    size: 64,
-                    color: scheme.primary,
-                  ),
+                  Icon(Icons.person_add_alt_1, size: 64, color: scheme.primary),
                   const SizedBox(height: 16),
                   Text(
                     'Invitar nuevo empleado',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'Envía una invitación por correo electrónico para que un empleado pueda unirse a tu institución.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
@@ -249,7 +247,8 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                                     )
                                   : const Icon(Icons.send),
                               label: Text(
-                                  _isSending ? 'Enviando...' : 'Crear Invitación'),
+                                _isSending ? 'Enviando...' : 'Crear Invitación',
+                              ),
                             ),
                           ],
                         ),
@@ -262,9 +261,11 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: scheme.primaryContainer.withOpacity(0.3),
+                      color: scheme.primaryContainer.withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: scheme.primary.withOpacity(0.3)),
+                      border: Border.all(
+                        color: scheme.primary.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
                       children: [
@@ -300,14 +301,15 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
       children: [
         Text(
           'Invitaciones pendientes',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         StreamBuilder<List<Invitation>>(
-          stream: _invitationService
-              .getInstitutionInvitationsStream(_institutionId!),
+          stream: _invitationService.getInstitutionInvitationsStream(
+            _institutionId!,
+          ),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
@@ -341,7 +343,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                         Icon(
                           Icons.mail_outline,
                           size: 48,
-                          color: scheme.onSurfaceVariant.withOpacity(0.5),
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -382,13 +384,13 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
 
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: statusColor.withOpacity(0.1),
+        backgroundColor: statusColor.withValues(alpha: 0.1),
         child: Icon(
           invitation.status == InvitationStatus.accepted
               ? Icons.check
               : invitation.status == InvitationStatus.cancelled
-                  ? Icons.close
-                  : Icons.hourglass_empty,
+              ? Icons.close
+              : Icons.hourglass_empty,
           color: statusColor,
         ),
       ),

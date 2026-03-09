@@ -34,8 +34,10 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
     if (user == null) {
       return;
     }
-    final attempts =
-        await _trainingService.countAttempts(widget.trainingId, user.uid);
+    final attempts = await _trainingService.countAttempts(
+      widget.trainingId,
+      user.uid,
+    );
     if (mounted) {
       setState(() {
         _attemptsUsed = attempts;
@@ -51,9 +53,9 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
 
     final List<dynamic> quiz = widget.data['quiz'] ?? [];
     if (quiz.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No hay quiz configurado.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No hay quiz configurado.')));
       return;
     }
 
@@ -131,7 +133,7 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final String title = widget.data['title'] ?? 'Capacitacion';
+    final String title = widget.data['title'] ?? 'Capacitación';
     final String description = widget.data['description'] ?? '';
     final String category = widget.data['category'] ?? 'General';
     final int duration = widget.data['durationMinutes'] ?? 0;
@@ -148,9 +150,7 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
     final bool canAttempt = attemptsLeft > 0;
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-      ),
+      appBar: AppBar(title: Text(title)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -160,17 +160,11 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
           _InfoRow(label: 'Intentos restantes', value: '$attemptsLeft'),
           _InfoRow(label: 'Vigencia', value: '$validityMonths meses'),
           const SizedBox(height: 16),
-          Text(
-            'Objetivo',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Objetivo', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(description),
           const SizedBox(height: 16),
-          Text(
-            'Contenido',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Contenido', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           if (contentType == 'video')
             Container(
@@ -181,18 +175,15 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
                 border: Border.all(color: scheme.outlineVariant),
               ),
               child: Text(
-                contentUrl.isNotEmpty
-                    ? contentUrl
-                    : 'No hay URL configurada.',
+                contentUrl.isNotEmpty ? contentUrl : 'No hay URL configurada.',
               ),
             )
           else
-            Text(contentText.isNotEmpty ? contentText : 'Contenido no disponible.'),
+            Text(
+              contentText.isNotEmpty ? contentText : 'Contenido no disponible.',
+            ),
           const SizedBox(height: 24),
-          Text(
-            'Quiz',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text('Quiz', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           if (quiz.isEmpty)
             const Text('No hay preguntas configuradas.')
@@ -212,25 +203,34 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
                       children: [
                         Text(
                           '${index + 1}. $question',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyLarge
+                          style: Theme.of(context).textTheme.bodyLarge
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 8),
                         ...List.generate(options.length, (optIndex) {
                           final option = options[optIndex].toString();
-                          return RadioListTile<int>(
-                            value: optIndex,
-                            groupValue: _answers[index],
-                            title: Text(option),
-                            onChanged: canAttempt
-                                ? (value) {
+                          final isSelected = _answers[index] == optIndex;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            enabled: canAttempt,
+                            onTap: canAttempt
+                                ? () {
                                     setState(() {
-                                      _answers[index] = value ?? 0;
+                                      _answers[index] = optIndex;
                                     });
                                   }
                                 : null,
+                            leading: Icon(
+                              isSelected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off,
+                              color: isSelected
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                            ),
+                            title: Text(option),
                           );
                         }),
                       ],
@@ -249,7 +249,9 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
                     });
                   }
                 : null,
-            title: const Text('Declaro haber recibido y comprendido el contenido.'),
+            title: const Text(
+              'Declaro haber recibido y comprendido el contenido.',
+            ),
             controlAffinity: ListTileControlAffinity.leading,
           ),
           const SizedBox(height: 12),
@@ -263,9 +265,11 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
                       width: 20,
                       child: CircularProgressIndicator(),
                     )
-                  : Text(canAttempt
-                      ? 'Enviar quiz'
-                      : 'No tienes intentos disponibles'),
+                  : Text(
+                      canAttempt
+                          ? 'Enviar quiz'
+                          : 'No tienes intentos disponibles',
+                    ),
             ),
           ),
         ],
@@ -290,16 +294,12 @@ class _InfoRow extends StatelessWidget {
             flex: 2,
             child: Text(
               label,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
-          Expanded(
-            flex: 3,
-            child: Text(value),
-          ),
+          Expanded(flex: 3, child: Text(value)),
         ],
       ),
     );

@@ -3,9 +3,19 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final Map<String, Stream<DocumentSnapshot<Map<String, dynamic>>>>
+  _profileStreams = {};
+  final Map<String, Stream<QuerySnapshot>> _institutionUserStreams = {};
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> streamUserProfile(String uid) {
-    return _firestore.collection('users').doc(uid).snapshots();
+    return _profileStreams.putIfAbsent(
+      uid,
+      () => _firestore
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .asBroadcastStream(),
+    );
   }
 
   Future<String?> getUserRole(String uid) async {
@@ -110,51 +120,81 @@ class UserService {
   }
 
   Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
-    await _firestore.collection('users').doc(uid).set(
-      {
-        ...data,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _firestore.collection('users').doc(uid).set({
+      ...data,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> updateUserRole(String uid, String role) async {
+    await _firestore.collection('users').doc(uid).set({
+      'role': role,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> unlinkUserFromInstitution(
+    String uid, {
+    bool demoteFromInstitutionAdmin = false,
+  }) async {
+    final payload = <String, dynamic>{
+      'institutionId': null,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (demoteFromInstitutionAdmin) {
+      payload['role'] = 'user';
+    }
+    await _firestore
+        .collection('users')
+        .doc(uid)
+        .set(payload, SetOptions(merge: true));
   }
 
   Future<void> setNotificationsEnabled(String uid, bool enabled) async {
-    await _firestore.collection('users').doc(uid).set(
-      {
-        'notificationsEnabled': enabled,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _firestore.collection('users').doc(uid).set({
+      'notificationsEnabled': enabled,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> addFcmToken(String uid, String token) async {
-    await _firestore.collection('users').doc(uid).set(
-      {
-        'fcmTokens': FieldValue.arrayUnion([token]),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _firestore.collection('users').doc(uid).set({
+      'fcmTokens': FieldValue.arrayUnion([token]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<void> removeFcmToken(String uid, String token) async {
-    await _firestore.collection('users').doc(uid).set(
-      {
-        'fcmTokens': FieldValue.arrayRemove([token]),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _firestore.collection('users').doc(uid).set({
+      'fcmTokens': FieldValue.arrayRemove([token]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// Obtiene usuarios de una institución específica
   Stream<QuerySnapshot> streamUsersByInstitution(String institutionId) {
-    return _firestore
-        .collection('users')
-        .where('institutionId', isEqualTo: institutionId)
-        .snapshots();
+    return _institutionUserStreams.putIfAbsent(
+      institutionId,
+      () => _firestore
+          .collection('users')
+          .where('institutionId', isEqualTo: institutionId)
+          .snapshots()
+          .asBroadcastStream(),
+    );
+  }
+
+  Future<int> getUserReportCount(String uid, {String? institutionId}) async {
+    Query<Map<String, dynamic>> query = _firestore
+        .collection('reports')
+        .where('createdBy', isEqualTo: uid);
+
+    final normalizedInstitutionId = institutionId?.trim();
+    if (normalizedInstitutionId != null && normalizedInstitutionId.isNotEmpty) {
+      query = query.where('institutionId', isEqualTo: normalizedInstitutionId);
+    }
+
+    final snapshot = await query.count().get();
+    return snapshot.count ?? 0;
   }
 
   /// Verifica si el usuario tiene una institución asignada

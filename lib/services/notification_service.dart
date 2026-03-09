@@ -38,4 +38,23 @@ class NotificationService {
     await _messaging.deleteToken();
     await _tokenSubscription?.cancel();
   }
+
+  Future<NotificationDiagnostic> getDiagnostic() async {
+    final settings = await _messaging.getNotificationSettings();
+    final token = await _messaging.getToken();
+    return NotificationDiagnostic(
+      authorizationStatus: settings.authorizationStatus,
+      currentToken: token,
+    );
+  }
+}
+
+class NotificationDiagnostic {
+  final AuthorizationStatus authorizationStatus;
+  final String? currentToken;
+
+  const NotificationDiagnostic({
+    required this.authorizationStatus,
+    required this.currentToken,
+  });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/institution.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../services/institution_service.dart';
@@ -77,6 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loginWithGoogle() async {
+    AuthService.socialAuthFlowActive = true;
     setState(() {
       _isLoading = true;
     });
@@ -99,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         );
-        
+
         // Si completó el registro exitosamente, hacer login
         if (result == true && mounted) {
           final user = FirebaseAuth.instance.currentUser;
@@ -111,6 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } on FirebaseAuthException catch (e) {
       _showMessage(_mapAuthError(e.code));
     } finally {
+      AuthService.socialAuthFlowActive = false;
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -120,6 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loginWithMicrosoft() async {
+    AuthService.socialAuthFlowActive = true;
     setState(() {
       _isLoading = true;
     });
@@ -142,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         );
-        
+
         // Si completó el registro exitosamente, hacer login
         if (result == true && mounted) {
           final user = FirebaseAuth.instance.currentUser;
@@ -156,6 +160,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       _showMessage('Error al iniciar sesión con Microsoft.');
     } finally {
+      AuthService.socialAuthFlowActive = false;
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -184,20 +189,29 @@ class _LoginScreenState extends State<LoginScreen> {
     // Admin de institución: validar estado
     if (role == 'admin_sst') {
       final institutionId = await _userService.getUserInstitutionId(user.uid);
+      if (!mounted) {
+        return;
+      }
       if (institutionId == null) {
         await _authService.signOut();
+        if (!mounted) {
+          return;
+        }
         _showMessage('No se encontró tu institución.');
         return;
       }
       final institutionService = InstitutionService();
       final inst = await institutionService.getInstitutionById(institutionId);
-      if (inst == null || inst.status == 'pending') {
+      if (!mounted) {
+        return;
+      }
+      if (inst == null || inst.status == InstitutionStatus.pending) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => VerificationPendingScreen()),
         );
         return;
       }
-      if (inst.status == 'active') {
+      if (inst.status == InstitutionStatus.active) {
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const AdminDashboardScreen()),
         );
@@ -221,11 +235,11 @@ class _LoginScreenState extends State<LoginScreen> {
   String _mapAuthError(String code) {
     switch (code) {
       case 'invalid-email':
-        return 'Correo no valido.';
+        return 'Correo no válido.';
       case 'user-not-found':
         return 'No existe una cuenta con ese correo.';
       case 'wrong-password':
-        return 'Contrasena incorrecta.';
+        return 'Contraseña incorrecta.';
       case 'user-disabled':
         return 'La cuenta esta deshabilitada.';
       case 'too-many-requests':
@@ -238,9 +252,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -256,8 +270,8 @@ class _LoginScreenState extends State<LoginScreen> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  scheme.primary.withOpacity(0.10),
-                  scheme.tertiary.withOpacity(0.08),
+                  scheme.primary.withValues(alpha: 0.10),
+                  scheme.tertiary.withValues(alpha: 0.08),
                   scheme.surface,
                 ],
                 begin: Alignment.topLeft,
@@ -303,11 +317,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     vertical: 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: scheme.primary.withOpacity(0.08),
+                                    color: scheme.primary.withValues(
+                                      alpha: 0.08,
+                                    ),
                                     borderRadius: BorderRadius.circular(18),
                                     border: Border.all(
-                                      color:
-                                          scheme.primary.withOpacity(0.18),
+                                      color: scheme.primary.withValues(
+                                        alpha: 0.18,
+                                      ),
                                     ),
                                   ),
                                   child: SizedBox(
@@ -323,12 +340,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               Text(
                                 'Acceso institucional',
                                 textAlign: TextAlign.center,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                    ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
                               ),
                             ],
                           ),
@@ -343,15 +356,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                   decoration: InputDecoration(
                                     labelText: 'Correo institucional',
                                     filled: true,
-                                    fillColor:
-                                        scheme.surfaceContainerHighest.withOpacity(0.6),
+                                    fillColor: scheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.6),
                                   ),
                                   validator: (value) {
                                     if (value == null || value.trim().isEmpty) {
                                       return 'Ingresa tu correo.';
                                     }
                                     if (!value.contains('@')) {
-                                      return 'Correo no valido.';
+                                      return 'Correo no válido.';
                                     }
                                     return null;
                                   },
@@ -361,10 +374,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller: _passwordController,
                                   obscureText: _isPasswordObscured,
                                   decoration: InputDecoration(
-                                    labelText: 'Contrasena',
+                                    labelText: 'Contraseña',
                                     filled: true,
-                                    fillColor:
-                                        scheme.surfaceContainerHighest.withOpacity(0.6),
+                                    fillColor: scheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.6),
                                     suffixIcon: IconButton(
                                       icon: Icon(
                                         _isPasswordObscured
@@ -381,7 +394,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
-                                      return 'Ingresa tu contrasena.';
+                                      return 'Ingresa tu contraseña.';
                                     }
                                     return null;
                                   },
@@ -415,14 +428,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                 child: Divider(color: scheme.outlineVariant),
                               ),
                               Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8.0),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8.0,
+                                ),
                                 child: Text(
                                   'o',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
-                                      ?.copyWith(color: scheme.onSurfaceVariant),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
                                 ),
                               ),
                               Expanded(
@@ -438,7 +452,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: scheme.primaryContainer.withOpacity(0.3),
+                              color: scheme.primaryContainer.withValues(
+                                alpha: 0.3,
+                              ),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -452,7 +468,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Expanded(
                                   child: Text(
                                     'Si tienes invitación, inicia sesión con el correo al que te llegó.',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
                                           color: scheme.onSurfaceVariant,
                                         ),
                                   ),
@@ -467,7 +484,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               // Botón de Google
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  onPressed: _isLoading ? null : _loginWithGoogle,
+                                  onPressed: _isLoading
+                                      ? null
+                                      : _loginWithGoogle,
                                   icon: Container(
                                     height: 20,
                                     width: 20,
@@ -486,7 +505,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   label: const Text('Google'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: scheme.onSurface,
-                                    side: BorderSide(color: scheme.outlineVariant),
+                                    side: BorderSide(
+                                      color: scheme.outlineVariant,
+                                    ),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 12,
                                       vertical: 12,
@@ -498,7 +519,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               // Botón de Microsoft
                               Expanded(
                                 child: OutlinedButton.icon(
-                                  onPressed: _isLoading ? null : _loginWithMicrosoft,
+                                  onPressed: _isLoading
+                                      ? null
+                                      : _loginWithMicrosoft,
                                   icon: Container(
                                     height: 20,
                                     width: 20,
@@ -511,18 +534,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                       child: Image.asset(
                                         'assets/microsoft-logo.jpg',
                                         fit: BoxFit.contain,
-                                        errorBuilder: (_, __, ___) => const Icon(
-                                          Icons.window,
-                                          size: 16,
-                                          color: Color(0xFF00A4EF),
-                                        ),
+                                        errorBuilder: (_, __, ___) =>
+                                            const Icon(
+                                              Icons.window,
+                                              size: 16,
+                                              color: Color(0xFF00A4EF),
+                                            ),
                                       ),
                                     ),
                                   ),
                                   label: const Text('Microsoft'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: scheme.onSurface,
-                                    side: BorderSide(color: scheme.outlineVariant),
+                                    side: BorderSide(
+                                      color: scheme.outlineVariant,
+                                    ),
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 12,
                                       vertical: 12,
@@ -545,7 +571,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     );
                                   },
-                            child: const Text('Olvide mi contrasena'),
+                            child: const Text('Olvidé mi contraseña'),
                           ),
                           const SizedBox(height: 8),
                           // Botón para registrarse con email/password (empleados invitados)
@@ -576,9 +602,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           Text(
                             '¿Eres administrador de una institución?',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                           const SizedBox(height: 12),
                           // Botón: Registrar institución
@@ -615,7 +640,7 @@ class _LoginScreenState extends State<LoginScreen> {
       width: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: color.withOpacity(0.18),
+        color: color.withValues(alpha: 0.18),
       ),
     );
   }

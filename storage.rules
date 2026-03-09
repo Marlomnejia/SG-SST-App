@@ -5,10 +5,41 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function userData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
     function isAdmin() {
+      return signedIn() && userData().role == 'admin';
+    }
+
+    function isAdminSstForInstitution(institutionId) {
       return signedIn() &&
-        firestore.get(/databases/(default)/documents/users/$(request.auth.uid))
-          .data.role == 'admin';
+        userData().role == 'admin_sst' &&
+        userData().institutionId == institutionId;
+    }
+
+    function belongsToInstitution(institutionId) {
+      return signedIn() &&
+        userData().institutionId == institutionId;
+    }
+
+    function isPublishedDocument(institutionId, documentId) {
+      return firestore.exists(
+          /databases/(default)/documents/institutions/$(institutionId)/documents/$(documentId)
+        ) &&
+        firestore.get(
+          /databases/(default)/documents/institutions/$(institutionId)/documents/$(documentId)
+        ).data.isPublished == true;
+    }
+
+    function isPublishedGlobalDocument(documentId) {
+      return firestore.exists(
+          /databases/(default)/documents/global_documents/$(documentId)
+        ) &&
+        firestore.get(
+          /databases/(default)/documents/global_documents/$(documentId)
+        ).data.isPublished == true;
     }
 
     match /users/{userId}/{allPaths=**} {
@@ -19,6 +50,36 @@ service firebase.storage {
     match /eventos/{eventId}/{allPaths=**} {
       allow read: if signedIn();
       allow write: if signedIn();
+    }
+
+    match /reports/{reportId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /action_plans/{planId}/{allPaths=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /institutions/{institutionId}/sst_documents/{documentId}/{allPaths=**} {
+      allow read: if signedIn() && (
+        isAdmin() ||
+        isAdminSstForInstitution(institutionId) ||
+        (belongsToInstitution(institutionId) &&
+          isPublishedDocument(institutionId, documentId))
+      );
+      allow write: if signedIn() && (
+        isAdmin() || isAdminSstForInstitution(institutionId)
+      );
+    }
+
+    match /global_sst_documents/{documentId}/{allPaths=**} {
+      allow read: if signedIn() && (
+        isAdmin() ||
+        isPublishedGlobalDocument(documentId)
+      );
+      allow write: if signedIn() && isAdmin();
     }
   }
 }

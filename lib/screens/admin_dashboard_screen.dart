@@ -3,7 +3,12 @@ import '../services/auth_service.dart';
 import 'login_screen.dart';
 import 'incident_management_screen.dart';
 import 'training_admin_screen.dart';
+import 'documents_admin_screen.dart';
 import 'invite_employee_screen.dart';
+import 'institution_users_screen.dart';
+import 'report_generation_screen.dart';
+import 'action_plans_screen.dart';
+import '../widgets/notification_permission_banner.dart';
 
 class AdminDashboardScreen extends StatelessWidget {
   const AdminDashboardScreen({super.key});
@@ -71,9 +76,10 @@ class AdminDashboardScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          const NotificationPermissionBanner(),
           _buildHeaderCard(theme, primary, accent),
           const SizedBox(height: 20),
-          _buildSectionTitle(context, 'Gestion principal'),
+          _buildSectionTitle(context, 'Gestión principal'),
           const SizedBox(height: 12),
           LayoutBuilder(
             builder: (context, constraints) {
@@ -131,7 +137,7 @@ class AdminDashboardScreen extends StatelessWidget {
                       context,
                       icon: Icons.school,
                       title: 'Capacitaciones',
-                      subtitle: 'Gestion de contenidos',
+                      subtitle: 'Gestión de contenidos',
                       color: scheme.tertiary,
                       onTap: () {
                         Navigator.push(
@@ -166,6 +172,24 @@ class AdminDashboardScreen extends StatelessWidget {
                     width: itemWidth,
                     child: _buildManagementTile(
                       context,
+                      icon: Icons.event_available,
+                      title: 'Planes de accion',
+                      subtitle: 'Seguimiento y validacion de tareas',
+                      color: scheme.secondaryContainer,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ActionPlansScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _buildManagementTile(
+                      context,
                       icon: Icons.person_add_alt_1,
                       title: 'Invitar Empleados',
                       subtitle: 'Enviar invitaciones por correo',
@@ -174,8 +198,44 @@ class AdminDashboardScreen extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
+                            builder: (context) => const InviteEmployeeScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _buildManagementTile(
+                      context,
+                      icon: Icons.picture_as_pdf_outlined,
+                      title: 'Documentos SST',
+                      subtitle: 'Normativa y formatos',
+                      color: scheme.secondary,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const AdminDocumentsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: itemWidth,
+                    child: _buildManagementTile(
+                      context,
+                      icon: Icons.groups_2_outlined,
+                      title: 'Usuarios',
+                      subtitle: 'Ver usuarios de la institución',
+                      color: scheme.tertiary,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
                             builder: (context) =>
-                                const InviteEmployeeScreen(),
+                                const InstitutionUsersScreen(),
                           ),
                         );
                       },
@@ -194,6 +254,14 @@ class AdminDashboardScreen extends StatelessWidget {
             title: 'Incidentes en seguimiento',
             subtitle: 'Revisar reportes recientes y actualizar estados.',
             color: scheme.tertiary,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const IncidentManagementScreen(),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 12),
           _buildInfoCard(
@@ -202,6 +270,14 @@ class AdminDashboardScreen extends StatelessWidget {
             title: 'Planes de accion',
             subtitle: 'Ver tareas asignadas y fechas limite.',
             color: scheme.secondary,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ActionPlansScreen(),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -226,11 +302,13 @@ class AdminDashboardScreen extends StatelessWidget {
               height: 48,
               width: 48,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.admin_panel_settings_outlined,
-                  color: Colors.white),
+              child: const Icon(
+                Icons.admin_panel_settings_outlined,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -257,12 +335,15 @@ class AdminDashboardScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Text(
                 'Admin',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -275,9 +356,9 @@ class AdminDashboardScreen extends StatelessWidget {
     return Text(
       title,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
+        fontWeight: FontWeight.w700,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
     );
   }
 
@@ -311,7 +392,7 @@ class AdminDashboardScreen extends StatelessWidget {
                   height: 40,
                   width: 40,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
+                    color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, color: color),
@@ -319,16 +400,16 @@ class AdminDashboardScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -344,9 +425,10 @@ class AdminDashboardScreen extends StatelessWidget {
     required String title,
     required String subtitle,
     required Color color,
+    VoidCallback? onTap,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
+    final child = Container(
       padding: const EdgeInsets.all(14.0),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
@@ -359,7 +441,7 @@ class AdminDashboardScreen extends StatelessWidget {
             height: 40,
             width: 40,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, color: color),
@@ -371,22 +453,34 @@ class AdminDashboardScreen extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
           ),
+          if (onTap != null) ...[
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+          ],
         ],
       ),
+    );
+    if (onTap == null) {
+      return child;
+    }
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: child,
     );
   }
 }
@@ -397,7 +491,7 @@ class InspectionManagementScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Gestion de inspecciones')),
-      body: const Center(child: Text('Pantalla de gestion de inspecciones')),
+      body: const Center(child: Text('Pantalla de gestión de inspecciones')),
     );
   }
 }
@@ -414,9 +508,6 @@ class ReportGenerationScreen extends StatelessWidget {
   const ReportGenerationScreen({super.key});
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Generar reportes')),
-      body: const Center(child: Text('Pantalla de generacion de reportes')),
-    );
+    return const SgSstReportGenerationScreen();
   }
 }

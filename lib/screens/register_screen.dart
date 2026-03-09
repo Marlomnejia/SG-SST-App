@@ -44,10 +44,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     try {
       // 1. Buscar invitación pendiente para este email
-      final invitation = await _invitationService.findPendingInvitationByEmail(email);
+      final invitation = await _invitationService.findPendingInvitationByEmail(
+        email,
+      );
 
       if (invitation == null) {
-        _showMessage('Este correo no ha sido invitado por ninguna institución. Contacta a tu administrador.');
+        _showMessage(
+          'Este correo no ha sido invitado por ninguna institución. Contacta a tu administrador.',
+        );
         setState(() => _isLoading = false);
         return;
       }
@@ -122,25 +126,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
       case 'invalid-email':
         return 'Correo no valido.';
       case 'weak-password':
-        return 'La contrasena es muy debil.';
+        return 'La contraseña es muy débil.';
       default:
         return 'No se pudo crear la cuenta. Intenta de nuevo.';
     }
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Crear cuenta'),
-      ),
+      appBar: AppBar(title: const Text('Crear cuenta')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16.0),
@@ -163,7 +165,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       Text(
                         'Registro SST',
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: scheme.primary,
                             ),
@@ -173,8 +176,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         'Usa el correo con el que fuiste invitado por tu institución.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 24),
                       TextFormField(
@@ -214,7 +217,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Ingresa una contrasena.';
+                            return 'Ingresa una contraseña.';
                           }
                           if (value.length < 6) {
                             return 'Minimo 6 caracteres.';
@@ -227,14 +230,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         controller: _confirmPasswordController,
                         obscureText: _isPasswordObscured,
                         decoration: const InputDecoration(
-                          labelText: 'Confirmar contrasena',
+                          labelText: 'Confirmar contraseña',
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Confirma tu contrasena.';
+                            return 'Confirma tu contraseña.';
                           }
                           if (value != _passwordController.text) {
-                            return 'Las contrasenas no coinciden.';
+                            return 'Las contraseñas no coinciden.';
                           }
                           return null;
                         },

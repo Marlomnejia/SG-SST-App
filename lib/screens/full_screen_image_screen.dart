@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class FullScreenImageScreen extends StatelessWidget {
   final String imageUrl;
 
-  const FullScreenImageScreen({Key? key, required this.imageUrl}) : super(key: key);
+  const FullScreenImageScreen({super.key, required this.imageUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -17,13 +17,10 @@ class FullScreenImageScreen extends StatelessWidget {
       body: Center(
         child: InteractiveViewer(
           panEnabled: false, // Set it to false to prevent panning.
-          boundaryMargin: EdgeInsets.all(80),
+          boundaryMargin: const EdgeInsets.all(80),
           minScale: 0.5,
           maxScale: 4,
-          child: Image.network(
-            imageUrl,
-            fit: BoxFit.contain,
-          ),
+          child: Image.network(imageUrl, fit: BoxFit.contain),
         ),
       ),
     );

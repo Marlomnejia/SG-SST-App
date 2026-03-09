@@ -1,264 +1,807 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../services/event_service.dart';
+import '../services/report_draft_service.dart';
+import '../services/storage_service.dart';
 import 'map_preview_screen.dart';
+import 'report_submitted_screen.dart';
 
 class ReportEventScreen extends StatefulWidget {
-  const ReportEventScreen({Key? key}) : super(key: key);
-
+  const ReportEventScreen({super.key});
   @override
-  _ReportEventScreenState createState() => _ReportEventScreenState();
+  State<ReportEventScreen> createState() => _ReportEventScreenState();
+}
+
+class _Evidence {
+  final XFile file;
+  final String type;
+  VideoPlayerController? vc;
+  _Evidence(this.file, this.type, [this.vc]);
 }
 
 class _ReportEventScreenState extends State<ReportEventScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _descriptionController = TextEditingController();
-  final _locationController = TextEditingController();
-  final EventService _eventService = EventService();
-  final ImagePicker _picker = ImagePicker();
+  static const int _maxEvidence = 3;
+  static const int _maxVideoBytes = 30 * 1024 * 1024;
+  static const _reportTypes = [
+    'Condicion insegura',
+    'Acto inseguro',
+    'Incidente (casi accidente)',
+    'Accidente con lesion',
+    'Emergencia / evento grave',
+    'Riesgo psicosocial',
+  ];
+  static const _autoDerivedEventTypes = {
+    'Condicion insegura',
+    'Acto inseguro',
+    'Incidente (casi accidente)',
+    'Accidente con lesion',
+    'Emergencia / evento grave',
+    'Riesgo psicosocial',
+  };
 
-  String _selectedType = 'Incidente';
-  String _selectedCategory = 'Condicion insegura';
-  String _selectedSeverity = 'Leve';
-  DateTime? _eventDateTime;
-  double? _latitude;
-  double? _longitude;
+  final _eventService = EventService();
+  final _draftService = ReportDraftService();
+  final _picker = ImagePicker();
+  final _k1 = GlobalKey<FormState>(), _k2 = GlobalKey<FormState>();
+  final _desc = TextEditingController();
+  final _wit = TextEditingController();
+  final _place = TextEditingController();
+  final _reference = TextEditingController();
+  final _evidence = <_Evidence>[];
+  late final DateTime _initialEventDateTime;
+  final String _draftLocalId = DateTime.now().millisecondsSinceEpoch.toString();
+
+  int _step = 0, _drafts = 0;
+  bool _loading = false,
+      _locating = false,
+      _graveShown = false,
+      _hasWitness = false,
+      _protocolAcknowledged = false;
+  double _progress = 0;
+  String _eventType = 'Incidente',
+      _reportType = 'Condicion insegura',
+      _severity = 'Leve';
+  String _affType = 'Yo', _affCount = 'No aplica';
   String? _gpsAddress;
-  bool _isLocating = false;
-  List<XFile> _selectedImages = [];
-  List<XFile> _selectedVideos = [];
-  final List<VideoPlayerController> _videoControllers = [];
-  bool _isLoading = false;
+  DateTime? _protocolAcknowledgedAt;
+  DateTime? _lastDraftSavedAt;
+  DateTime _dt = DateTime.now();
+  double? _lat, _lng;
+  List<String> _recentPlaces = [];
 
-  Future<void> _pickImageFromCamera() async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.camera);
-    if (pickedFile != null) {
-      setState(() {
-        _selectedImages.add(pickedFile);
-      });
-    }
-  }
-
-  Future<void> _pickImagesFromGallery() async {
-    final List<XFile> pickedFiles = await _picker.pickMultiImage();
-    if (pickedFiles.isNotEmpty) {
-      setState(() {
-        _selectedImages.addAll(pickedFiles);
-      });
-    }
-  }
-
-  Future<void> _pickVideoFromCamera() async {
-    final XFile? pickedFile = await _picker.pickVideo(source: ImageSource.camera);
-    if (pickedFile != null) {
-      await _addVideo(pickedFile);
-    }
-  }
-
-  Future<void> _pickVideoFromGallery() async {
-    final XFile? pickedFile = await _picker.pickVideo(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      await _addVideo(pickedFile);
-    }
-  }
-
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-    });
-  }
-
-  void _removeVideo(int index) {
-    setState(() {
-      _selectedVideos.removeAt(index);
-      _videoControllers[index].dispose();
-      _videoControllers.removeAt(index);
-    });
-  }
-
-  Future<void> _submitReport() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() {
-        _isLoading = true;
-      });
-
-      try {
-        await _eventService.addEvent(
-          _selectedType,
-          _descriptionController.text,
-          _selectedImages,
-          videos: _selectedVideos,
-          location: _locationController.text.trim(),
-          category: _selectedCategory,
-          severity: _selectedSeverity,
-          eventDateTime: _eventDateTime,
-          latitude: _latitude,
-          longitude: _longitude,
-          gpsAddress: _gpsAddress,
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Reporte enviado con exito.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        setState(() {
-          _descriptionController.clear();
-          _locationController.clear();
-          _selectedImages.clear();
-          _selectedVideos.clear();
-          for (final controller in _videoControllers) {
-            controller.dispose();
-          }
-          _videoControllers.clear();
-          _eventDateTime = null;
-          _latitude = null;
-          _longitude = null;
-          _gpsAddress = null;
-        });
-        Navigator.of(context).pop();
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al enviar el reporte: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      } finally {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+  @override
+  void initState() {
+    super.initState();
+    _initialEventDateTime = _dt;
+    _loadDrafts();
+    _loadPlaceSuggestions();
   }
 
   @override
   void dispose() {
-    _descriptionController.dispose();
-    _locationController.dispose();
-    for (final controller in _videoControllers) {
-      controller.dispose();
+    _desc.dispose();
+    _wit.dispose();
+    _place.dispose();
+    _reference.dispose();
+    for (final e in _evidence) {
+      e.vc?.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _pickEventDateTime() async {
-    final DateTime? date = await showDatePicker(
+  Future<void> _loadDrafts() async {
+    final d = await _draftService.getDrafts();
+    if (mounted) setState(() => _drafts = d.length);
+  }
+
+  Future<void> _loadPlaceSuggestions() async {
+    final values = await _eventService
+        .getRecentPlaceSuggestionsForCurrentInstitution();
+    if (mounted) setState(() => _recentPlaces = values);
+  }
+
+  void _msg(String t) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
+
+  void _onReportType(String? v) {
+    if (v == null) return;
+    setState(() {
+      _reportType = v;
+      if (_autoDerivedEventTypes.contains(v)) {
+        _eventType = _expectedEventType(v);
+      }
+    });
+  }
+
+  void _onSeverity(String v) {
+    final wasSameSelection = _severity == v;
+    setState(() {
+      _severity = v;
+      if (v != 'Grave') {
+        _protocolAcknowledged = false;
+        _protocolAcknowledgedAt = null;
+        _graveShown = false;
+      } else if (!wasSameSelection) {
+        _protocolAcknowledged = false;
+        _protocolAcknowledgedAt = null;
+      }
+    });
+    if (v == 'Grave' && !_graveShown && !wasSameSelection) {
+      _graveShown = true;
+      showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Severidad grave'),
+          content: const Text(
+            'Activa el protocolo interno y notifica al responsable SG-SST. Antes de enviar deberas confirmar esta accion.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  String _normalizePlace(String raw) {
+    return raw.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  }
+
+  bool _isValidPlaceName(String value) {
+    final cleaned = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (cleaned.length < 4 || cleaned.length > 100) return false;
+    if (!RegExp(r'[A-Za-z0-9]').hasMatch(cleaned)) return false;
+    if (RegExp(r'^[^A-Za-z0-9]+$').hasMatch(cleaned)) return false;
+    return true;
+  }
+
+  bool _v1() {
+    if (!(_k1.currentState?.validate() ?? false)) return false;
+    if (!_isValidPlaceName(_place.text)) {
+      _msg('Ingresa un Lugar / Area valido (4 a 100 caracteres).');
+      return false;
+    }
+    if (_reference.text.trim().length > 120) {
+      _msg('Referencia adicional: maximo 120 caracteres.');
+      return false;
+    }
+    return true;
+  }
+
+  bool _v2() => _k2.currentState?.validate() ?? false;
+
+  bool get _hasDraftableContent {
+    return _reportType != _reportTypes.first ||
+        _severity != 'Leve' ||
+        _affType != 'Yo' ||
+        _affCount != 'No aplica' ||
+        _hasWitness ||
+        _place.text.trim().isNotEmpty ||
+        _reference.text.trim().isNotEmpty ||
+        _desc.text.trim().isNotEmpty ||
+        _wit.text.trim().isNotEmpty ||
+        _evidence.isNotEmpty ||
+        _lat != null ||
+        _lng != null ||
+        _dt != _initialEventDateTime;
+  }
+
+  String _currentStepLabel() {
+    switch (_step) {
+      case 0:
+        return 'Define el tipo, la ubicacion y la severidad.';
+      case 1:
+        return 'Completa fecha, descripcion y personas involucradas.';
+      case 2:
+        return 'Adjunta evidencia, captura GPS y envia.';
+      default:
+        return 'Completa la informacion del reporte.';
+    }
+  }
+
+  String _formatDraftSavedAt(DateTime value) {
+    final hh = value.hour.toString().padLeft(2, '0');
+    final min = value.minute.toString().padLeft(2, '0');
+    return '$hh:$min';
+  }
+
+  Map<String, dynamic> _location() {
+    final placeName = _place.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final reference = _reference.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return {
+      'placeName': placeName,
+      'placeNormalized': _normalizePlace(placeName),
+      'reference': reference.isEmpty ? null : reference,
+      'gps': (_lat != null && _lng != null) ? {'lat': _lat, 'lng': _lng} : null,
+    };
+  }
+
+  Map<String, dynamic> _people() => {
+    'affectedType': _affType,
+    'affectedCount': _affCount,
+    'hasWitnesses': _hasWitness,
+    'witnesses': _hasWitness ? _wit.text.trim() : null,
+    'protocolAcknowledged': _severity == 'Grave'
+        ? _protocolAcknowledged
+        : false,
+    'protocolAcknowledgedAt':
+        _severity == 'Grave' && _protocolAcknowledgedAt != null
+        ? _protocolAcknowledgedAt!.toIso8601String()
+        : null,
+  };
+
+  String _expectedEventType(String reportType) {
+    switch (reportType) {
+      case 'Accidente con lesion':
+      case 'Accidente con lesión':
+      case 'Emergencia / evento grave':
+        return 'Accidente';
+      case 'Condicion insegura':
+      case 'Condición insegura':
+      case 'Acto inseguro':
+      case 'Incidente (casi accidente)':
+      case 'Riesgo psicosocial':
+        return 'Incidente';
+      default:
+        return _eventType;
+    }
+  }
+
+  IconData _eventTypeIcon(String eventType) {
+    return eventType == 'Accidente'
+        ? Icons.health_and_safety_outlined
+        : Icons.warning_amber_outlined;
+  }
+
+  Color _eventTypeTone(ColorScheme scheme, String eventType) {
+    return eventType == 'Accidente'
+        ? scheme.errorContainer.withValues(alpha: 0.7)
+        : scheme.surfaceContainerHighest;
+  }
+
+  Color _eventTypeOnTone(ColorScheme scheme, String eventType) {
+    return eventType == 'Accidente'
+        ? scheme.onErrorContainer
+        : scheme.onSurfaceVariant;
+  }
+
+  Future<bool> _ensureEventTypeConsistency() async {
+    final expected = _expectedEventType(_reportType);
+    if (_eventType == expected) {
+      return true;
+    }
+
+    final shouldAutoCorrect = await showDialog<bool>(
       context: context,
-      initialDate: _eventDateTime ?? DateTime.now(),
+      builder: (_) => AlertDialog(
+        title: const Text('Seleccion inconsistente'),
+        content: const Text(
+          'El tipo de evento no coincide con lo que estas reportando. Ajusta la seleccion para continuar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Revisar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Corregir automaticamente'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldAutoCorrect == true && mounted) {
+      setState(() => _eventType = expected);
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _ensureProtocolAcknowledgment() async {
+    if (_severity != 'Grave' || _protocolAcknowledged) {
+      return true;
+    }
+
+    bool confirmed = false;
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Confirmacion de protocolo'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'La severidad grave requiere activar el protocolo interno, notificar al responsable SG-SST y asegurar atencion inmediata.',
+              ),
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                value: confirmed,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                onChanged: (value) =>
+                    setDialogState(() => confirmed = value ?? false),
+                title: const Text(
+                  'Confirmo que debo activar el protocolo interno',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: confirmed
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              child: const Text('Confirmar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (accepted == true && mounted) {
+      setState(() {
+        _protocolAcknowledged = true;
+        _protocolAcknowledgedAt = DateTime.now();
+      });
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _promptAttachmentRetry(String caseNumber) async {
+    final retry = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Adjuntos pendientes'),
+        content: Text(
+          'El reporte $caseNumber se creo correctamente, pero no se pudieron subir algunos adjuntos. Puedes reintentarlo ahora o continuar con adjuntos pendientes.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Continuar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reintentar ahora'),
+          ),
+        ],
+      ),
+    );
+    return retry == true;
+  }
+
+  String _formatDateTime(DateTime value) {
+    final dd = value.day.toString().padLeft(2, '0');
+    final mm = value.month.toString().padLeft(2, '0');
+    final yyyy = value.year.toString();
+    final hh = value.hour.toString().padLeft(2, '0');
+    final min = value.minute.toString().padLeft(2, '0');
+    return '$dd/$mm/$yyyy  $hh:$min';
+  }
+
+  Future<void> _pickDate() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _dt,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now(),
     );
-    if (date == null) {
-      return;
-    }
-    final TimeOfDay? time = await showTimePicker(
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(_eventDateTime ?? DateTime.now()),
+      initialTime: TimeOfDay.fromDateTime(_dt),
     );
-    if (time == null) {
-      return;
-    }
-    setState(() {
-      _eventDateTime = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-    });
+    if (t == null) return;
+    setState(() => _dt = DateTime(d.year, d.month, d.day, t.hour, t.minute));
   }
 
-  Future<void> _captureLocation() async {
-    setState(() {
-      _isLocating = true;
-    });
+  Future<void> _pickEvidenceMenu() async {
+    if (_evidence.length >= _maxEvidence) {
+      return _msg('Maximo $_maxEvidence evidencias.');
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (c) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Foto camara'),
+              onTap: () {
+                Navigator.pop(c);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Foto galeria'),
+              onTap: () {
+                Navigator.pop(c);
+                _pickImages();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam_outlined),
+              title: const Text('Video camara'),
+              onTap: () {
+                Navigator.pop(c);
+                _pickVideo(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library_outlined),
+              title: const Text('Video galeria'),
+              onTap: () {
+                Navigator.pop(c);
+                _pickVideo(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Future<void> _pickImage(ImageSource s) async {
+    final f = await _picker.pickImage(
+      source: s,
+      imageQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (f == null || !mounted) return;
+    setState(() => _evidence.add(_Evidence(f, 'image')));
+  }
+
+  Future<void> _pickImages() async {
+    final left = _maxEvidence - _evidence.length;
+    if (left <= 0) return;
+    final files = await _picker.pickMultiImage(
+      imageQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (files.isEmpty || !mounted) return;
+    setState(
+      () =>
+          _evidence.addAll(files.take(left).map((f) => _Evidence(f, 'image'))),
+    );
+  }
+
+  Future<void> _pickVideo(ImageSource s) async {
+    final f = await _picker.pickVideo(source: s);
+    if (f == null || !mounted) return;
+    final size = await File(f.path).length();
+    if (size > _maxVideoBytes) return _msg('Video maximo 30MB.');
+    final vc = VideoPlayerController.file(File(f.path));
+    await vc.initialize();
+    vc.pause();
+    if (!mounted) return vc.dispose();
+    setState(() => _evidence.add(_Evidence(f, 'video', vc)));
+  }
+
+  void _removeEvidence(int i) {
+    _evidence[i].vc?.dispose();
+    setState(() => _evidence.removeAt(i));
+  }
+
+  Future<void> _captureGps() async {
+    setState(() => _locating = true);
     try {
-      final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        _showMessage('Activa la ubicacion del dispositivo.');
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _msg('Activa la ubicacion del dispositivo.');
         return;
       }
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        p = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        _showMessage('Permiso de ubicacion denegado.');
+      if (p == LocationPermission.denied ||
+          p == LocationPermission.deniedForever) {
+        _msg('Permiso de ubicacion denegado.');
         return;
       }
-
-      final Position position = await Geolocator.getCurrentPosition(
+      final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-
-      String? address;
+      String? addr;
       try {
-        final placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
-        if (placemarks.isNotEmpty) {
-          final place = placemarks.first;
-          final parts = [
-            place.street,
-            place.subLocality,
-            place.locality,
-            place.administrativeArea,
-          ].where((value) => value != null && value!.trim().isNotEmpty).toList();
-          if (parts.isNotEmpty) {
-            address = parts.map((e) => e!).join(', ');
-          }
+        final pm = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+        if (pm.isNotEmpty) {
+          addr =
+              [pm.first.street, pm.first.locality, pm.first.administrativeArea]
+                  .where((e) => e != null && e.trim().isNotEmpty)
+                  .map((e) => e!)
+                  .join(', ');
         }
-      } catch (_) {
-        address = null;
-      }
-
-      setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-        _gpsAddress = address;
-      });
-    } catch (e) {
-      _showMessage('No se pudo obtener la ubicacion.');
-    } finally {
+      } catch (_) {}
       if (mounted) {
         setState(() {
-          _isLocating = false;
+          _lat = pos.latitude;
+          _lng = pos.longitude;
+          _gpsAddress = addr;
         });
       }
+    } finally {
+      if (mounted) setState(() => _locating = false);
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+  bool _offline(Object e) {
+    final t = e.toString().toLowerCase();
+    return t.contains('network') ||
+        t.contains('socket') ||
+        t.contains('unavailable');
   }
 
-  Future<void> _addVideo(XFile file) async {
-    final controller = VideoPlayerController.file(File(file.path));
-    await controller.setVolume(0);
-    await controller.initialize();
-    controller.setLooping(true);
-    if (!mounted) {
-      controller.dispose();
+  Future<void> _saveDraft({bool notify = false}) async {
+    await _draftService.saveDraft({
+      'localId': _draftLocalId,
+      'eventType': _eventType,
+      'reportType': _reportType,
+      'severity': _severity,
+      'location': _location(),
+      'eventDateTime': _dt.toIso8601String(),
+      'description': _desc.text.trim(),
+      'people': _people(),
+      'gps': {'lat': _lat, 'lng': _lng, 'address': _gpsAddress},
+      'attachments': _evidence
+          .map((e) => {'path': e.file.path, 'type': e.type})
+          .toList(),
+      'savedAt': DateTime.now().toIso8601String(),
+    });
+    _lastDraftSavedAt = DateTime.now();
+    _loadDrafts();
+    if (notify && mounted) {
+      _msg('Borrador actualizado correctamente.');
+    }
+  }
+
+  Future<void> _saveCurrentDraft() async {
+    if (_loading) return;
+    if (!_hasDraftableContent) {
+      _msg('Agrega al menos un dato antes de guardar un borrador.');
       return;
     }
+    await _saveDraft(notify: true);
+  }
+
+  Future<void> _submit() async {
+    if (!_v1() || !_v2()) return;
+    if (!await _ensureEventTypeConsistency()) return;
+    if (!mounted) return;
+    if (!await _ensureProtocolAcknowledgment()) return;
+    if (!mounted) return;
     setState(() {
-      _selectedVideos.add(file);
-      _videoControllers.add(controller);
+      _loading = true;
+      _progress = 0;
     });
+    try {
+      final result = await _eventService.submitStructuredReport(
+        eventType: _expectedEventType(_reportType),
+        reportType: _reportType,
+        severity: _severity,
+        location: _location(),
+        eventDateTime: _dt,
+        description: _desc.text.trim(),
+        people: _people(),
+        latitude: _lat,
+        longitude: _lng,
+        gpsAddress: _gpsAddress,
+        attachments: _evidence
+            .map((e) => ReportAttachmentInput(file: e.file, type: e.type))
+            .toList(),
+        onUploadProgress: (p) {
+          if (mounted) setState(() => _progress = p);
+        },
+      );
+      var attachmentsPending = result.attachmentsPending;
+      if (attachmentsPending && _evidence.isNotEmpty && mounted) {
+        final retryNow = await _promptAttachmentRetry(result.caseNumber);
+        if (retryNow && mounted) {
+          try {
+            setState(() => _progress = 0);
+            await _eventService.retryPendingAttachments(
+              reportId: result.reportId,
+              attachments: _evidence
+                  .map((e) => ReportAttachmentInput(file: e.file, type: e.type))
+                  .toList(),
+              onUploadProgress: (p) {
+                if (mounted) setState(() => _progress = p);
+              },
+            );
+            attachmentsPending = false;
+          } catch (retryError) {
+            _msg('No se pudieron subir los adjuntos. Quedaron pendientes.');
+          }
+        }
+      }
+      await _draftService.removeDraft(_draftLocalId);
+      _lastDraftSavedAt = null;
+      await _loadDrafts();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ReportSubmittedScreen(
+            caseNumber: result.caseNumber,
+            attachmentsPending: attachmentsPending,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (_offline(e)) {
+        await _saveDraft();
+        _msg('Sin conexion. Guardado como borrador.');
+      } else {
+        _msg('Error al enviar: $e');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _syncDrafts() async {
+    final drafts = await _draftService.getDrafts();
+    if (drafts.isEmpty) return _msg('No hay borradores.');
+    setState(() {
+      _loading = true;
+      _progress = 0;
+    });
+    int ok = 0;
+    for (final d in drafts) {
+      try {
+        final files = <ReportAttachmentInput>[];
+        for (final a in (d['attachments'] as List<dynamic>? ?? [])) {
+          if (a is! Map) continue;
+          final p = (a['path'] ?? '').toString();
+          if (p.isEmpty || !await File(p).exists()) continue;
+          files.add(
+            ReportAttachmentInput(
+              file: XFile(p),
+              type: (a['type'] ?? 'image').toString(),
+            ),
+          );
+        }
+        final gps = (d['gps'] as Map?) ?? const {};
+        await _eventService.submitStructuredReport(
+          eventType: (d['eventType'] ?? 'Incidente').toString(),
+          reportType: (d['reportType'] ?? 'Condicion insegura').toString(),
+          severity: (d['severity'] ?? 'Leve').toString(),
+          location: Map<String, dynamic>.from(
+            (d['location'] as Map?) ?? const {},
+          ),
+          eventDateTime:
+              DateTime.tryParse((d['eventDateTime'] ?? '').toString()) ??
+              DateTime.now(),
+          description: (d['description'] ?? '').toString(),
+          people: Map<String, dynamic>.from((d['people'] as Map?) ?? const {}),
+          latitude: (gps['lat'] as num?)?.toDouble(),
+          longitude: (gps['lng'] as num?)?.toDouble(),
+          gpsAddress: (gps['address'] ?? '').toString(),
+          attachments: files,
+          onUploadProgress: (p) {
+            if (mounted) setState(() => _progress = p);
+          },
+        );
+        final id = (d['localId'] ?? '').toString();
+        if (id.isNotEmpty) await _draftService.removeDraft(id);
+        ok++;
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() => _loading = false);
+      _loadDrafts();
+      _loadPlaceSuggestions();
+      _msg('Borradores sincronizados: $ok/${drafts.length}');
+    }
+  }
+
+  Widget _buildProgressHeader(ColorScheme scheme) {
+    final completion = (_step + 1) / 3;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Paso ${_step + 1} de 3',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _currentStepLabel(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: _loading ? null : _saveCurrentDraft,
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('Guardar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: completion,
+              minHeight: 8,
+              backgroundColor: scheme.surfaceContainerHighest,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _HeaderBadge(
+                icon: Icons.cloud_upload_outlined,
+                label: _drafts == 0 ? 'Sin borradores' : 'Borradores: $_drafts',
+              ),
+              _HeaderBadge(
+                icon: _lat == null || _lng == null
+                    ? Icons.location_searching_outlined
+                    : Icons.my_location_outlined,
+                label: _lat == null || _lng == null
+                    ? 'GPS opcional'
+                    : 'GPS capturado',
+                background: _lat == null || _lng == null
+                    ? null
+                    : scheme.secondaryContainer,
+                foreground: _lat == null || _lng == null
+                    ? null
+                    : scheme.onSecondaryContainer,
+              ),
+              if (_lastDraftSavedAt != null)
+                _HeaderBadge(
+                  icon: Icons.check_circle_outline,
+                  label: 'Guardado ${_formatDraftSavedAt(_lastDraftSavedAt!)}',
+                  background: scheme.tertiaryContainer,
+                  foreground: scheme.onTertiaryContainer,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -267,610 +810,642 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Reportar evento'),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Campos obligatorios *',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              _SectionHeader(
-                title: 'Resumen del evento',
-                subtitle: 'Registra la informacion basica y el contexto.',
-                icon: Icons.assignment_outlined,
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                child: Column(
-                  children: [
-                    _buildSegmentedType(scheme),
-                    const SizedBox(height: 16),
-                    _buildCategorySeverityRow(),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _locationController,
-                      decoration: const InputDecoration(
-                        labelText: 'Lugar / area *',
-                        hintText: 'Ej: Sede A, Laboratorio 2',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Ingresa el lugar del evento.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _buildDateTimeTile(scheme),
-                    const SizedBox(height: 12),
-                    _buildLocationTile(scheme),
-                    if (_latitude != null && _longitude != null) ...[
-                      const SizedBox(height: 12),
-                      _buildMapPreview(),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              _SectionHeader(
-                title: 'Descripcion y evidencia',
-                subtitle: 'Detalla lo ocurrido y adjunta fotos si aplica.',
-                icon: Icons.fact_check_outlined,
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _descriptionController,
-                      decoration: const InputDecoration(
-                        labelText: 'Descripcion del evento *',
-                        hintText: 'Describe detalladamente lo que sucedio...',
-                        border: OutlineInputBorder(),
-                      ),
-                      maxLines: 5,
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Por favor, ingresa una descripcion.';
-                        }
-                        if (value.trim().length < 10) {
-                          return 'Agrega mas detalle (minimo 10 caracteres).';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    _buildMediaActions(),
-                    const SizedBox(height: 12),
-                    _buildVideoActions(),
-                    const SizedBox(height: 16),
-                    if (_selectedImages.isNotEmpty) _buildImagePreview(),
-                    if (_selectedVideos.isNotEmpty) _buildVideoPreview(),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                  ),
-                  onPressed: _isLoading ? null : _submitReport,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(),
-                        )
-                      : const Text('Enviar reporte'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSegmentedType(ColorScheme scheme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Tipo de evento *',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            _buildChipOption(
-              label: 'Incidente',
-              selected: _selectedType == 'Incidente',
-              onTap: () => setState(() => _selectedType = 'Incidente'),
-              scheme: scheme,
-            ),
-            _buildChipOption(
-              label: 'Accidente',
-              selected: _selectedType == 'Accidente',
-              onTap: () => setState(() => _selectedType = 'Accidente'),
-              scheme: scheme,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCategorySeverityRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _selectedCategory,
-            decoration: const InputDecoration(
-              labelText: 'Categoria *',
-              border: OutlineInputBorder(),
-            ),
-            items: const [
-              DropdownMenuItem(
-                value: 'Condicion insegura',
-                child: Text('Condicion insegura'),
-              ),
-              DropdownMenuItem(
-                value: 'Acto inseguro',
-                child: Text('Acto inseguro'),
-              ),
-              DropdownMenuItem(
-                value: 'Accidente',
-                child: Text('Accidente'),
-              ),
-              DropdownMenuItem(
-                value: 'Casi accidente',
-                child: Text('Casi accidente'),
-              ),
-            ],
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  _selectedCategory = value;
-                });
-              }
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            value: _selectedSeverity,
-            decoration: const InputDecoration(
-              labelText: 'Severidad *',
-              border: OutlineInputBorder(),
-            ),
-            items: const [
-              DropdownMenuItem(value: 'Leve', child: Text('Leve')),
-              DropdownMenuItem(value: 'Moderada', child: Text('Moderada')),
-              DropdownMenuItem(value: 'Grave', child: Text('Grave')),
-            ],
-            onChanged: (value) {
-              if (value != null) {
-                setState(() {
-                  _selectedSeverity = value;
-                });
-              }
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDateTimeTile(ColorScheme scheme) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: const Text('Fecha y hora del evento (opcional)'),
-      subtitle: Text(
-        _eventDateTime == null
-            ? 'No seleccionada'
-            : '${_eventDateTime!.day.toString().padLeft(2, '0')}/'
-                '${_eventDateTime!.month.toString().padLeft(2, '0')}/'
-                '${_eventDateTime!.year} '
-                '${_eventDateTime!.hour.toString().padLeft(2, '0')}:'
-                '${_eventDateTime!.minute.toString().padLeft(2, '0')}',
-      ),
-      trailing: Icon(Icons.calendar_today, color: scheme.primary),
-      onTap: _pickEventDateTime,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Theme.of(context).dividerColor),
-      ),
-    );
-  }
-
-  Widget _buildLocationTile(ColorScheme scheme) {
-    final String subtitle;
-    if (_latitude == null || _longitude == null) {
-      subtitle = 'No capturada';
-    } else if (_gpsAddress != null && _gpsAddress!.isNotEmpty) {
-      subtitle = _gpsAddress!;
-    } else {
-      subtitle =
-          'Lat: ${_latitude!.toStringAsFixed(5)}, Lng: ${_longitude!.toStringAsFixed(5)}';
-    }
-
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: const Text('Ubicacion GPS (opcional)'),
-      subtitle: Text(subtitle),
-      trailing: _isLocating
-          ? const SizedBox(
-              height: 18,
-              width: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(Icons.my_location, color: scheme.primary),
-      onTap: _isLocating ? null : _captureLocation,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Theme.of(context).dividerColor),
-      ),
-    );
-  }
-
-  Widget _buildMapPreview() {
-    final center = LatLng(_latitude!, _longitude!);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Vista previa del mapa',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: SizedBox(
-            height: 180,
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: center,
-                zoom: 16,
-              ),
-              markers: {
-                Marker(
-                  markerId: const MarkerId('preview'),
-                  position: center,
-                ),
-              },
-              zoomControlsEnabled: false,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              scrollGesturesEnabled: false,
-              zoomGesturesEnabled: false,
-              rotateGesturesEnabled: false,
-              tiltGesturesEnabled: false,
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MapPreviewScreen(
-                    latitude: _latitude!,
-                    longitude: _longitude!,
-                    address: _gpsAddress,
-                  ),
-                ),
-              );
-            },
-            icon: const Icon(Icons.map_outlined),
-            label: const Text('Ver mapa'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMediaActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Tomar foto'),
-            onPressed: _pickImageFromCamera,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.photo_library),
-            label: const Text('Galeria'),
-            onPressed: _pickImagesFromGallery,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildVideoActions() {
-    return Row(
-      children: [
-        Expanded(
-          child: ElevatedButton.icon(
-            icon: const Icon(Icons.videocam),
-            label: const Text('Grabar video'),
-            onPressed: _pickVideoFromCamera,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.video_library),
-            label: const Text('Video'),
-            onPressed: _pickVideoFromGallery,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildImagePreview() {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _selectedImages.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 4,
-        mainAxisSpacing: 4,
-      ),
-      itemBuilder: (context, index) {
-        return Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.file(
-                File(_selectedImages[index].path),
-                width: double.infinity,
-                height: double.infinity,
-                fit: BoxFit.cover,
-              ),
-            ),
-            Positioned(
-              top: 6,
-              right: 6,
-              child: GestureDetector(
-                onTap: () => _removeImage(index),
-                child: const CircleAvatar(
-                  radius: 12,
-                  backgroundColor: Colors.black54,
-                  child: Icon(Icons.close, color: Colors.white, size: 16),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildVideoPreview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Videos adjuntos:',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-        const SizedBox(height: 8),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _selectedVideos.length,
-          itemBuilder: (context, index) {
-            final file = _selectedVideos[index];
-            final controller = _videoControllers[index];
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(12),
-                      ),
-                      child: AspectRatio(
-                        aspectRatio: controller.value.isInitialized
-                            ? controller.value.aspectRatio
-                            : 16 / 9,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            if (controller.value.isInitialized)
-                              VideoPlayer(controller)
-                            else
-                              Container(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceContainerHighest,
-                              ),
-                            IconButton(
-                              icon: Icon(
-                                controller.value.isPlaying
-                                    ? Icons.pause_circle_filled
-                                    : Icons.play_circle_fill,
-                                size: 48,
-                                color: Colors.white,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  if (controller.value.isPlaying) {
-                                    controller.pause();
-                                  } else {
-                                    controller.play();
-                                  }
-                                });
-                              },
-                            ),
-                          ],
+        actions: [
+          IconButton(
+            tooltip: 'Sincronizar borradores',
+            onPressed: _loading ? null : _syncDrafts,
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.cloud_upload_outlined),
+                if (_drafts > 0)
+                  Positioned(
+                    top: -4,
+                    right: -6,
+                    child: CircleAvatar(
+                      radius: 8,
+                      backgroundColor: scheme.error,
+                      child: Text(
+                        '$_drafts',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
                         ),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.videocam, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              file.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _buildProgressHeader(scheme),
+          Expanded(
+            child: Stepper(
+              currentStep: _step,
+              onStepContinue: _loading
+                  ? null
+                  : () async {
+                      if (_step == 0 && !_v1()) return;
+                      if (_step == 1 && !_v2()) return;
+                      if (_step < 2) {
+                        setState(() => _step++);
+                      } else {
+                        await _submit();
+                      }
+                    },
+              onStepCancel: _loading
+                  ? null
+                  : () {
+                      if (_step == 0) {
+                        Navigator.pop(context);
+                      } else {
+                        setState(() => _step--);
+                      }
+                    },
+              controlsBuilder: (_, d) => Row(
+                children: [
+                  FilledButton(
+                    onPressed: d.onStepContinue,
+                    child: Text(_step == 2 ? 'Enviar reporte' : 'Continuar'),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: d.onStepCancel,
+                    child: Text(_step == 0 ? 'Cancelar' : 'Atras'),
+                  ),
+                ],
+              ),
+              steps: [
+                Step(
+                  isActive: _step >= 0,
+                  title: const Text('Tipo y ubicacion'),
+                  subtitle: const Text('Que reportas y donde ocurrio'),
+                  content: Form(
+                    key: _k1,
+                    child: Column(
+                      children: [
+                        if (_autoDerivedEventTypes.contains(_reportType))
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Tipo de evento *',
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                              const SizedBox(height: 6),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: scheme.outlineVariant,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  color: scheme.surface,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Chip(
+                                      avatar: Icon(
+                                        _eventTypeIcon(_eventType),
+                                        size: 18,
+                                        color: _eventTypeOnTone(
+                                          scheme,
+                                          _eventType,
+                                        ),
+                                      ),
+                                      backgroundColor: _eventTypeTone(
+                                        scheme,
+                                        _eventType,
+                                      ),
+                                      side: BorderSide(
+                                        color: _eventTypeOnTone(
+                                          scheme,
+                                          _eventType,
+                                        ).withValues(alpha: 0.18),
+                                      ),
+                                      labelStyle: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            color: _eventTypeOnTone(
+                                              scheme,
+                                              _eventType,
+                                            ),
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                      label: Text(_eventType),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Se asigna automaticamente segun lo que estas reportando.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        else
+                          DropdownButtonFormField<String>(
+                            initialValue: _eventType,
+                            decoration: const InputDecoration(
+                              labelText: 'Tipo de evento *',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'Incidente',
+                                child: Text('Incidente'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'Accidente',
+                                child: Text('Accidente'),
+                              ),
+                            ],
+                            onChanged: (v) => v == null
+                                ? null
+                                : setState(() => _eventType = v),
+                          ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: _reportType,
+                          decoration: const InputDecoration(
+                            labelText: '¿Que estas reportando? *',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _reportTypes
+                              .map(
+                                (e) =>
+                                    DropdownMenuItem(value: e, child: Text(e)),
+                              )
+                              .toList(),
+                          onChanged: _onReportType,
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          children: ['Leve', 'Moderada', 'Grave']
+                              .map(
+                                (v) => ChoiceChip(
+                                  label: Text(v),
+                                  selected: _severity == v,
+                                  onSelected: (_) => _onSeverity(v),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _severity == 'Leve'
+                              ? 'Leve: sin lesion y control inmediato.'
+                              : _severity == 'Moderada'
+                              ? 'Moderada: requiere seguimiento.'
+                              : 'Grave: riesgo alto, activa protocolo.',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 12),
+                        Autocomplete<String>(
+                          optionsBuilder: (text) {
+                            final query = text.text.trim().toLowerCase();
+                            if (query.isEmpty) {
+                              return _recentPlaces;
+                            }
+                            return _recentPlaces.where(
+                              (e) => e.toLowerCase().contains(query),
+                            );
+                          },
+                          onSelected: (value) => _place.text = value,
+                          fieldViewBuilder:
+                              (context, textController, focusNode, onSubmit) {
+                                textController.text = _place.text;
+                                textController.selection =
+                                    TextSelection.fromPosition(
+                                      TextPosition(
+                                        offset: textController.text.length,
+                                      ),
+                                    );
+                                textController.addListener(
+                                  () => _place.text = textController.text,
+                                );
+                                return TextFormField(
+                                  controller: textController,
+                                  focusNode: focusNode,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Lugar / Area *',
+                                    hintText:
+                                        'Ej: Salon 204, Laboratorio de quimica, Patio, Oficina de coordinacion',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) {
+                                      return 'Ingresa el lugar.';
+                                    }
+                                    if (!_isValidPlaceName(v)) {
+                                      return 'Lugar invalido.';
+                                    }
+                                    return null;
+                                  },
+                                );
+                              },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _reference,
+                          maxLength: 120,
+                          decoration: const InputDecoration(
+                            labelText: 'Referencia adicional (opcional)',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Step(
+                  isActive: _step >= 1,
+                  title: const Text('Detalles y personas'),
+                  subtitle: const Text('Fecha, descripcion y testigos'),
+                  content: Form(
+                    key: _k2,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: scheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: scheme.outlineVariant),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                height: 40,
+                                width: 40,
+                                decoration: BoxDecoration(
+                                  color: scheme.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.schedule,
+                                  color: scheme.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Fecha y hora del evento *',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _formatDateTime(_dt),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: _pickDate,
+                                icon: const Icon(
+                                  Icons.edit_calendar_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Cambiar'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _desc,
+                          maxLines: 4,
+                          decoration: const InputDecoration(
+                            labelText: 'Descripcion del evento *',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (v) => v == null || v.trim().length < 10
+                              ? 'Minimo 10 caracteres.'
+                              : null,
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: _affType,
+                          decoration: const InputDecoration(
+                            labelText: 'Persona afectada *',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'Yo', child: Text('Yo')),
+                            DropdownMenuItem(
+                              value: 'Otra persona',
+                              child: Text('Otra persona'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'No aplica',
+                              child: Text('No aplica'),
+                            ),
+                          ],
+                          onChanged: (v) =>
+                              v == null ? null : setState(() => _affType = v),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          initialValue: _affCount,
+                          decoration: const InputDecoration(
+                            labelText: 'Numero de afectados (opcional)',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'No aplica',
+                              child: Text('No aplica'),
+                            ),
+                            DropdownMenuItem(value: '1', child: Text('1')),
+                            DropdownMenuItem(value: '2-5', child: Text('2-5')),
+                            DropdownMenuItem(value: '>5', child: Text('>5')),
+                          ],
+                          onChanged: (v) =>
+                              v == null ? null : setState(() => _affCount = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('¿Hubo testigos?'),
+                          value: _hasWitness,
+                          onChanged: (v) => setState(() => _hasWitness = v),
+                        ),
+                        if (_hasWitness)
+                          TextFormField(
+                            controller: _wit,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre testigo / nota',
+                              hintText: 'Opcional: se registrara despues',
+                              border: OutlineInputBorder(),
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => _removeVideo(index),
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildChipOption({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-    required ColorScheme scheme,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? scheme.primary : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: selected ? scheme.onPrimary : scheme.onSurface,
-              ),
-        ),
+                Step(
+                  isActive: _step >= 2,
+                  title: const Text('Evidencia y GPS'),
+                  subtitle: const Text('Adjuntos, ubicacion y envio'),
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Evidencias (${_evidence.length}/$_maxEvidence)',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _loading ? null : _pickEvidenceMenu,
+                          icon: const Icon(Icons.attach_file),
+                          label: const Text('Adjuntar evidencia'),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (_evidence.isNotEmpty)
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _evidence.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 6,
+                                mainAxisSpacing: 6,
+                              ),
+                          itemBuilder: (_, i) {
+                            final e = _evidence[i];
+                            return Stack(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: e.type == 'image'
+                                      ? Image.file(
+                                          File(e.file.path),
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                        )
+                                      : Container(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.surfaceContainerHighest,
+                                          child:
+                                              e.vc != null &&
+                                                  e.vc!.value.isInitialized
+                                              ? FittedBox(
+                                                  fit: BoxFit.cover,
+                                                  child: SizedBox(
+                                                    width:
+                                                        e.vc!.value.size.width,
+                                                    height:
+                                                        e.vc!.value.size.height,
+                                                    child: VideoPlayer(e.vc!),
+                                                  ),
+                                                )
+                                              : const Center(
+                                                  child: Icon(
+                                                    Icons.videocam_outlined,
+                                                  ),
+                                                ),
+                                        ),
+                                ),
+                                Positioned(
+                                  right: 4,
+                                  top: 4,
+                                  child: GestureDetector(
+                                    onTap: () => _removeEvidence(i),
+                                    child: const CircleAvatar(
+                                      radius: 10,
+                                      backgroundColor: Colors.black54,
+                                      child: Icon(
+                                        Icons.close,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 12),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: scheme.outlineVariant),
+                        ),
+                        child: ListTile(
+                          title: const Text('Ubicacion GPS'),
+                          subtitle: Text(
+                            _lat == null || _lng == null
+                                ? 'Estado: no capturada'
+                                : 'Estado: capturada',
+                          ),
+                          trailing: _locating
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.my_location_outlined),
+                          onTap: _locating ? null : _captureGps,
+                        ),
+                      ),
+                      if (_gpsAddress != null && _gpsAddress!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            _gpsAddress!,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      if (_lat != null && _lng != null)
+                        Column(
+                          children: [
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: SizedBox(
+                                height: 160,
+                                child: GoogleMap(
+                                  initialCameraPosition: CameraPosition(
+                                    target: LatLng(_lat!, _lng!),
+                                    zoom: 16,
+                                  ),
+                                  markers: {
+                                    Marker(
+                                      markerId: const MarkerId('r'),
+                                      position: LatLng(_lat!, _lng!),
+                                    ),
+                                  },
+                                  zoomControlsEnabled: false,
+                                  myLocationEnabled: false,
+                                  myLocationButtonEnabled: false,
+                                  scrollGesturesEnabled: false,
+                                  zoomGesturesEnabled: false,
+                                  rotateGesturesEnabled: false,
+                                  tiltGesturesEnabled: false,
+                                ),
+                              ),
+                            ),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => MapPreviewScreen(
+                                      latitude: _lat!,
+                                      longitude: _lng!,
+                                      address: _gpsAddress,
+                                    ),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.map_outlined),
+                                label: const Text('Ver mapa'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (_loading) ...[
+                        const SizedBox(height: 12),
+                        LinearProgressIndicator(value: _progress),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Subiendo evidencia: ${(_progress * 100).toStringAsFixed(0)}%',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-
-  const _SectionHeader({
-    required this.title,
-    required this.subtitle,
+class _HeaderBadge extends StatelessWidget {
+  const _HeaderBadge({
     required this.icon,
+    required this.label,
+    this.background,
+    this.foreground,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Container(
-          height: 40,
-          width: 40,
-          decoration: BoxDecoration(
-            color: scheme.primary.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: scheme.primary),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  final Widget child;
-
-  const _SectionCard({required this.child});
+  final IconData icon;
+  final String label;
+  final Color? background;
+  final Color? foreground;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: scheme.outlineVariant),
+        color: background ?? scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
       ),
-      child: child,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: foreground ?? scheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: foreground ?? scheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
