@@ -74,7 +74,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) return;
     if (_institutionId == null || _currentUserId == null) {
       _showMessage(
-        'Error: No se pudo obtener la información de la institución',
+        'Error: No se pudo obtener la informacion de la institucion',
       );
       return;
     }
@@ -87,7 +87,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
       final invitation = await _invitationService.createInvitation(
         email: email,
         institutionId: _institutionId!,
-        institutionName: _institutionName ?? 'Tu institución',
+        institutionName: _institutionName ?? 'Tu institucion',
         createdBy: _currentUserId!,
       );
 
@@ -98,7 +98,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
     } on InvitationException catch (e) {
       _showMessage(e.message);
     } catch (e) {
-      _showMessage('Error al enviar invitación: $e');
+      _showMessage('Error al enviar invitacion: $e');
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -109,12 +109,12 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
-        title: const Text('¡Invitación Creada!'),
+        title: const Text('¡Invitacion Creada!'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Se ha creado la invitación para:\n${invitation.email}',
+              'Se ha creado la invitacion para:\n${invitation.email}',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -145,16 +145,16 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
 
   Future<void> _openMailApp(String toEmail) async {
     final subject = Uri.encodeComponent(
-      'Invitación a ${_institutionName ?? "nuestra institución"} - SG-SST',
+      'Invitacion a ${_institutionName ?? "nuestra institucion"} - SG-SST',
     );
     final body = Uri.encodeComponent(
       'Hola,\n\n'
-      'Has sido invitado a unirte a ${_institutionName ?? "nuestra institución"} '
-      'en la aplicación SG-SST.\n\n'
+      'Has sido invitado a unirte a ${_institutionName ?? "nuestra institucion"} '
+      'en la aplicacion SG-SST.\n\n'
       'Para completar tu registro:\n'
       '1. Descarga la app SG-SST\n'
-      '2. Inicia sesión con tu cuenta de Google o Microsoft usando este correo ($toEmail)\n'
-      '3. La app detectará automáticamente tu invitación\n\n'
+      '2. Inicia sesion con tu cuenta de Google o Microsoft usando este correo ($toEmail)\n'
+      '3. La app detectara automaticamente tu invitacion\n\n'
       '¡Te esperamos!\n\n'
       'Saludos,\n'
       'Equipo de SG-SST',
@@ -166,7 +166,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
       if (await canLaunchUrl(mailUri)) {
         await launchUrl(mailUri);
       } else {
-        _showMessage('No se pudo abrir la aplicación de correo');
+        _showMessage('No se pudo abrir la aplicacion de correo');
       }
     } catch (e) {
       _showMessage('Error al abrir correo: $e');
@@ -289,7 +289,9 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                   runSpacing: 8,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: code.isEmpty ? null : () => _copyInviteCode(code),
+                      onPressed: code.isEmpty
+                          ? null
+                          : () => _copyInviteCode(code),
                       icon: const Icon(Icons.copy_outlined),
                       label: const Text('Copiar codigo'),
                     ),
@@ -353,7 +355,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Envía una invitación por correo electrónico para que un empleado pueda unirse a tu institución.',
+                    'Envia una invitacion por correo electronico para que un empleado pueda unirse a tu institucion.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -378,19 +380,19 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                               autocorrect: false,
                               enabled: !_isSending,
                               decoration: const InputDecoration(
-                                labelText: 'Correo electrónico del empleado',
+                                labelText: 'Correo electronico del empleado',
                                 prefixIcon: Icon(Icons.email_outlined),
                                 hintText: 'empleado@ejemplo.com',
                               ),
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
-                                  return 'Ingresa el correo electrónico';
+                                  return 'Ingresa el correo electronico';
                                 }
                                 final emailRegex = RegExp(
                                   r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
                                 );
                                 if (!emailRegex.hasMatch(value.trim())) {
-                                  return 'Ingresa un correo válido';
+                                  return 'Ingresa un correo valido';
                                 }
                                 return null;
                               },
@@ -409,7 +411,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                                     )
                                   : const Icon(Icons.send),
                               label: Text(
-                                _isSending ? 'Enviando...' : 'Crear Invitación',
+                                _isSending ? 'Enviando...' : 'Crear Invitacion',
                               ),
                             ),
                           ],
@@ -435,7 +437,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'El empleado deberá iniciar sesión con Google o Microsoft usando el mismo correo para acceder automáticamente.',
+                            'El empleado debera iniciar sesion con Google o Microsoft usando el mismo correo para acceder automaticamente.',
                             style: TextStyle(
                               color: scheme.onSurface,
                               fontSize: 13,
@@ -509,7 +511,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'No hay invitaciones aún',
+                          'No hay invitaciones aun',
                           style: TextStyle(color: scheme.onSurfaceVariant),
                         ),
                       ],
@@ -558,7 +560,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
       ),
       title: Text(invitation.email),
       subtitle: Text(
-        '${invitation.status.displayName} • ${_formatDate(invitation.createdAt)}',
+        '${invitation.status.displayName} â€¢ ${_formatDate(invitation.createdAt)}',
         style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
       ),
       trailing: invitation.status == InvitationStatus.pending
@@ -568,7 +570,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
                   _openMailApp(invitation.email);
                 } else if (value == 'cancel') {
                   await _invitationService.cancelInvitation(invitation.id);
-                  _showMessage('Invitación cancelada');
+                  _showMessage('Invitacion cancelada');
                 }
               },
               itemBuilder: (context) => [
@@ -607,7 +609,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
     } else if (diff.inDays == 1) {
       return 'Ayer';
     } else if (diff.inDays < 7) {
-      return 'Hace ${diff.inDays} días';
+      return 'Hace ${diff.inDays} dias';
     } else {
       return '${date.day}/${date.month}/${date.year}';
     }

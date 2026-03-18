@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -310,7 +310,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
         const SizedBox(width: 12),
         AppMetaChip(
           icon: Icons.schedule_outlined,
-          label: 'MÃ¡s recientes primero',
+          label: 'Mas recientes primero',
           background: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
           foreground: scheme.onSurfaceVariant,
         ),
@@ -344,8 +344,8 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
           const SizedBox(height: 14),
           Text(
             _manageGlobal
-                ? 'AÃºn no hay documentos globales'
-                : 'AÃºn no hay documentos',
+                ? 'Aun no hay documentos globales'
+                : 'Aun no hay documentos',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
@@ -355,7 +355,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
           Text(
             _manageGlobal
                 ? 'Sube el primer documento base para todas las instituciones.'
-                : 'Sube el primer documento para tu instituciÃ³n.',
+                : 'Sube el primer documento para tu institucion.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -447,7 +447,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
                         icon: _manageGlobal
                             ? Icons.public_outlined
                             : Icons.school_outlined,
-                        label: _manageGlobal ? 'General' : 'Mi instituciÃ³n',
+                        label: _manageGlobal ? 'General' : 'Mi institucion',
                         background: accent.withValues(alpha: 0.1),
                         foreground: accent,
                       ),
@@ -741,7 +741,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Eliminar documento'),
-          content: Text('Se eliminara "${model.title}". Â¿Deseas continuar?'),
+          content: Text('Se eliminara "${model.title}". ¿Deseas continuar?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -918,15 +918,15 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
                         Text(
                           widget.manageGlobal
                               ? 'Documento base del sistema'
-                              : 'Documento para tu instituciÃ³n',
+                              : 'Documento para tu institucion',
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           widget.manageGlobal
-                              ? 'Este archivo podrÃ¡ ser consultado por usuarios de todas las instituciones cuando estÃ© publicado.'
-                              : 'Este archivo se publicarÃ¡ solo para los usuarios asociados a tu instituciÃ³n.',
+                              ? 'Este archivo podra ser consultado por usuarios de todas las instituciones cuando este publicado.'
+                              : 'Este archivo se publicara solo para los usuarios asociados a tu institucion.',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
@@ -1050,7 +1050,7 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
                     subtitle: Text(
                       widget.manageGlobal
                           ? 'Visible para todas las instituciones'
-                          : 'Visible para usuarios de la instituciÃ³n',
+                          : 'Visible para usuarios de la institucion',
                     ),
                     value: _isPublished,
                     onChanged: _submitting

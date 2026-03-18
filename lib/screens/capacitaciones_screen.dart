@@ -68,7 +68,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
       }
       final institutionId = await _userService.getUserInstitutionId(user.uid);
       if (institutionId == null || institutionId.trim().isEmpty) {
-        throw Exception('Usuario sin institución asignada.');
+        throw Exception('Usuario sin institucion asignada.');
       }
       if (!mounted) return;
       setState(() {
@@ -921,7 +921,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
         context,
         icon: Icons.video_library_outlined,
         title: 'No hay videos publicados',
-        subtitle: 'Cuando se publiquen contenidos en línea, los verás aquí.',
+        subtitle: 'Cuando se publiquen contenidos en linea, los veras aqui.',
       );
     }
 
@@ -1010,7 +1010,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
                 ),
                 subtitle: Text(
                   completedDocs.isEmpty
-                      ? 'Aún no has completado videos'
+                      ? 'Aun no has completado videos'
                       : 'Revisa aqui tus videos finalizados',
                 ),
                 childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -1083,7 +1083,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
             icon: Icons.history_outlined,
             title: 'Sin historial',
             subtitle:
-                'Aún no tienes capacitaciones finalizadas en tu historial.',
+                'Aun no tienes capacitaciones finalizadas en tu historial.',
           );
         }
 
@@ -1353,14 +1353,14 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
             const SizedBox(height: 12),
             const _MetaBadgeUser(
               icon: Icons.ondemand_video_outlined,
-              label: 'Contenido en línea',
+              label: 'Contenido en linea',
             ),
             const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    (data['title'] ?? 'Capacitación en línea').toString(),
+                    (data['title'] ?? 'Capacitacion en linea').toString(),
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -1680,7 +1680,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('URL de video inválida.')));
+      ).showSnackBar(const SnackBar(content: Text('URL de video invalida.')));
       return;
     }
     if (!mounted) return;
@@ -1732,7 +1732,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
     if (uri == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enlace de reunión inválido.')),
+        const SnackBar(content: Text('Enlace de reunion invalido.')),
       );
       return;
     }
@@ -2122,8 +2122,8 @@ class _VideoProgressSummary extends StatelessWidget {
               Expanded(
                 child: Text(
                   totalCount == 0
-                      ? 'Aún no hay capacitaciones en línea'
-                      : '$watchedCount de $totalCount completadas • $percent% • Restantes: $remaining',
+                      ? 'Aun no hay capacitaciones en linea'
+                      : '$watchedCount de $totalCount completadas â€¢ $percent% â€¢ Restantes: $remaining',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

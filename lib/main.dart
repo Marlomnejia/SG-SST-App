@@ -333,7 +333,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     .toString()
                     .trim();
                 if (institutionId.isEmpty) {
-                  // Evita cerrar sesión automáticamente durante flujos de
+                  // Evita cerrar sesion automaticamente durante flujos de
                   // bootstrap/registro para no invalidar operaciones en curso
                   // (ej. carga de documentos en Storage).
                   return const LoginScreen();
@@ -366,7 +366,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     .toString()
                     .trim();
                 if (institutionId.isEmpty) {
-                  // Evita cerrar sesión automáticamente durante flujos de
+                  // Evita cerrar sesion automaticamente durante flujos de
                   // bootstrap/registro para no invalidar operaciones en curso.
                   return const LoginScreen();
                 }

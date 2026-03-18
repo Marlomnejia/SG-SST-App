@@ -102,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
 
-        // Si completó el registro exitosamente, hacer login
+        // Si completo el registro exitosamente, hacer login
         if (result == true && mounted) {
           final user = FirebaseAuth.instance.currentUser;
           if (user != null) {
@@ -147,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
 
-        // Si completó el registro exitosamente, hacer login
+        // Si completo el registro exitosamente, hacer login
         if (result == true && mounted) {
           final user = FirebaseAuth.instance.currentUser;
           if (user != null) {
@@ -158,7 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } on FirebaseAuthException catch (e) {
       _showMessage(_mapAuthError(e.code));
     } catch (e) {
-      _showMessage('Error al iniciar sesión con Microsoft.');
+      _showMessage('Error al iniciar sesion con Microsoft.');
     } finally {
       AuthService.socialAuthFlowActive = false;
       if (mounted) {
@@ -186,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       return;
     }
-    // Admin de institución: validar estado
+    // Admin de institucion: validar estado
     if (role == 'admin_sst') {
       final institutionId = await _userService.getUserInstitutionId(user.uid);
       if (!mounted) {
@@ -197,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!mounted) {
           return;
         }
-        _showMessage('No se encontró tu institución.');
+        _showMessage('No se encontro tu institucion.');
         return;
       }
       final institutionService = InstitutionService();
@@ -279,11 +279,11 @@ class _LoginScreenState extends State<LoginScreen> {
   String _mapAuthError(String code) {
     switch (code) {
       case 'invalid-email':
-        return 'Correo no válido.';
+        return 'Correo no valido.';
       case 'user-not-found':
         return 'No existe una cuenta con ese correo.';
       case 'wrong-password':
-        return 'Contraseña incorrecta.';
+        return 'Contrasena incorrecta.';
       case 'user-disabled':
         return 'La cuenta esta deshabilitada.';
       case 'too-many-requests':
@@ -408,7 +408,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       return 'Ingresa tu correo.';
                                     }
                                     if (!value.contains('@')) {
-                                      return 'Correo no válido.';
+                                      return 'Correo no valido.';
                                     }
                                     return null;
                                   },
@@ -418,7 +418,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   controller: _passwordController,
                                   obscureText: _isPasswordObscured,
                                   decoration: InputDecoration(
-                                    labelText: 'Contraseña',
+                                    labelText: 'Contrasena',
                                     filled: true,
                                     fillColor: scheme.surfaceContainerHighest
                                         .withValues(alpha: 0.6),
@@ -438,7 +438,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                   validator: (value) {
                                     if (value == null || value.isEmpty) {
-                                      return 'Ingresa tu contraseña.';
+                                      return 'Ingresa tu contrasena.';
                                     }
                                     return null;
                                   },
@@ -511,7 +511,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Si tienes invitación, inicia sesión con el correo al que te llegó.',
+                                    'Si tienes invitacion, inicia sesion con el correo al que te llego.',
                                     style: Theme.of(context).textTheme.bodySmall
                                         ?.copyWith(
                                           color: scheme.onSurfaceVariant,
@@ -525,7 +525,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Botones de redes sociales
                           Row(
                             children: [
-                              // Botón de Google
+                              // Boton de Google
                               Expanded(
                                 child: OutlinedButton.icon(
                                   onPressed: _isLoading
@@ -560,7 +560,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              // Botón de Microsoft
+                              // Boton de Microsoft
                               Expanded(
                                 child: OutlinedButton.icon(
                                   onPressed: _isLoading
@@ -615,10 +615,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     );
                                   },
-                            child: const Text('Olvidé mi contraseña'),
+                            child: const Text('Olvide mi contrasena'),
                           ),
                           const SizedBox(height: 8),
-                          // Botón para registrarse con email/password (empleados invitados)
+                          // Boton para registrarse con email/password (empleados invitados)
                           OutlinedButton.icon(
                             onPressed: _isLoading
                                 ? null
@@ -644,13 +644,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const Divider(height: 32),
                           Text(
-                            '¿Eres administrador de una institución?',
+                            '¿Eres administrador de una institucion?',
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                           const SizedBox(height: 12),
-                          // Botón: Registrar institución
+                          // Boton: Registrar institucion
                           TextButton(
                             onPressed: _isLoading
                                 ? null
@@ -663,7 +663,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     );
                                   },
-                            child: const Text('Registrar mi institución'),
+                            child: const Text('Registrar mi institucion'),
                           ),
                         ],
                       ),

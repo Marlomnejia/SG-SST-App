@@ -1,5 +1,4 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/institution.dart';
 import '../models/invitation.dart';
@@ -8,7 +7,7 @@ import 'invitation_service.dart';
 import 'user_service.dart';
 import 'document_upload_service.dart';
 
-/// Excepción personalizada para errores de autenticación
+/// Excepcion personalizada para errores de autenticacion
 class AuthException implements Exception {
   final String code;
   final String message;
@@ -19,10 +18,10 @@ class AuthException implements Exception {
   String toString() => 'AuthException: [$code] $message';
 }
 
-/// Tipos de proveedores de autenticación social
+/// Tipos de proveedores de autenticacion social
 enum SocialAuthProvider { google, microsoft }
 
-/// Excepción genérica para usuarios de redes sociales que no están registrados
+/// Excepcion generica para usuarios de redes sociales que no estan registrados
 /// Contiene los datos del proveedor para completar el registro
 class SocialUserNotRegisteredException implements Exception {
   final User user;
@@ -52,7 +51,7 @@ class SocialUserNotRegisteredException implements Exception {
       'SocialUserNotRegisteredException: Usuario de $providerName no registrado';
 }
 
-/// Mantener compatibilidad con código existente
+/// Mantener compatibilidad con codigo existente
 typedef GoogleUserNotRegisteredException = SocialUserNotRegisteredException;
 
 class AuthService {
@@ -148,7 +147,7 @@ class AuthService {
     }
   }
 
-  /// Registra una nueva institución junto con su administrador
+  /// Registra una nueva institucion junto con su administrador
   /// Orden estricto: 1) Crear usuario Auth, 2) Subir documentos, 3) Crear docs Firestore
   Future<User?> registerInstitutionAdmin({
     required String email,
@@ -165,12 +164,12 @@ class AuthService {
     String? adminDisplayName,
     void Function(String)? onProgress,
   }) async {
-    // Verificar si el NIT ya está registrado
+    // Verificar si el NIT ya esta registrado
     final nitExists = await _safeNitAlreadyExists(institutionNit);
     if (nitExists) {
       throw AuthException(
         code: 'nit-already-exists',
-        message: 'El NIT ya está registrado en el sistema.',
+        message: 'El NIT ya esta registrado en el sistema.',
       );
     }
 
@@ -193,12 +192,12 @@ class AuthService {
         );
       }
 
-      // Actualizar displayName si se proporcionó
+      // Actualizar displayName si se proporciono
       if (adminDisplayName != null && adminDisplayName.isNotEmpty) {
         await user.updateDisplayName(adminDisplayName);
       }
 
-      // PASO 2: Subir documentos a Firebase Storage (ahora el usuario está autenticado)
+      // PASO 2: Subir documentos a Firebase Storage (ahora el usuario esta autenticado)
       final documentUrls = <String, String>{};
       for (final entry in selectedDocuments.entries) {
         onProgress?.call('Subiendo ${entry.key.displayName}...');
@@ -210,8 +209,8 @@ class AuthService {
         documentUrls[entry.key.name] = url;
       }
 
-      // PASO 3: Crear la institución en Firestore
-      onProgress?.call('Creando institución...');
+      // PASO 3: Crear la institucion en Firestore
+      onProgress?.call('Creando institucion...');
       institutionId = await _institutionService.createInstitution(
         name: institutionName,
         nit: institutionNit,
@@ -235,33 +234,33 @@ class AuthService {
         institutionId: institutionId,
       );
 
-      // PASO 5: Enviar email de verificación
+      // PASO 5: Enviar email de verificacion
       await user.sendEmailVerification();
 
       return user;
     } catch (e) {
-      // Rollback: Si algo falla después de crear el usuario
+      // Rollback: Si algo falla despues de crear el usuario
       if (user != null && institutionId == null) {
-        // Si el usuario se creó pero la institución no, eliminar usuario
+        // Si el usuario se creo pero la institucion no, eliminar usuario
         try {
           await user.delete();
         } catch (_) {}
       } else if (institutionId != null) {
-        // Si la institución se creó, marcarla como eliminada
+        // Si la institucion se creo, marcarla como eliminada
         await _rollbackInstitution(institutionId);
       }
       rethrow;
     }
   }
 
-  /// Registra un usuario que se une mediante código de invitación
+  /// Registra un usuario que se une mediante codigo de invitacion
   Future<User?> registerWithInviteCode({
     required String email,
     required String password,
     required String inviteCode,
     String? displayName,
   }) async {
-    // Verificar que el código de invitación sea válido
+    // Verificar que el codigo de invitacion sea valido
     final institution = await _institutionService.getInstitutionByInviteCode(
       inviteCode,
     );
@@ -269,7 +268,7 @@ class AuthService {
       throw AuthException(
         code: 'invalid-invite-code',
         message:
-            'El código de invitación no es válido o la institución no está activa.',
+            'El codigo de invitacion no es valido o la institucion no esta activa.',
       );
     }
 
@@ -288,12 +287,12 @@ class AuthService {
         );
       }
 
-      // Actualizar displayName si se proporcionó
+      // Actualizar displayName si se proporciono
       if (displayName != null && displayName.isNotEmpty) {
         await user.updateDisplayName(displayName);
       }
 
-      // Crear el perfil vinculado a la institución
+      // Crear el perfil vinculado a la institucion
       await _userService.createUserWithInstitution(
         uid: user.uid,
         email: email,
@@ -303,7 +302,7 @@ class AuthService {
         role: 'user',
       );
 
-      // Enviar email de verificación
+      // Enviar email de verificacion
       await user.sendEmailVerification();
 
       return user;
@@ -312,7 +311,7 @@ class AuthService {
     }
   }
 
-  /// Vincula un usuario existente a una institución mediante código
+  /// Vincula un usuario existente a una institucion mediante codigo
   Future<void> joinInstitutionWithCode(String uid, String inviteCode) async {
     final institution = await _institutionService.getInstitutionByInviteCode(
       inviteCode,
@@ -320,7 +319,7 @@ class AuthService {
     if (institution == null) {
       throw AuthException(
         code: 'invalid-invite-code',
-        message: 'El código de invitación no es válido.',
+        message: 'El codigo de invitacion no es valido.',
       );
     }
 
@@ -342,7 +341,7 @@ class AuthService {
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
       if (googleUser == null) {
-        return null; // Usuario canceló el inicio de sesión
+        return null; // Usuario cancelo el inicio de sesion
       }
 
       final GoogleSignInAuthentication googleAuth =
@@ -361,10 +360,10 @@ class AuthService {
         return null;
       }
 
-      // Verificar rol válido en Firestore o claims (y sincronizar si hace falta)
+      // Verificar rol valido en Firestore o claims (y sincronizar si hace falta)
       final existingRole = await _resolveRoleFromFirestoreOrClaims(user);
       if (existingRole == null) {
-        // Usuario nuevo de Google - lanzar excepción para onboarding
+        // Usuario nuevo de Google - lanzar excepcion para onboarding
         throw SocialUserNotRegisteredException(
           user: user,
           provider: SocialAuthProvider.google,
@@ -380,7 +379,7 @@ class AuthService {
     }
   }
 
-  /// Inicia sesión con Microsoft
+  /// Inicia sesion con Microsoft
   Future<User?> signInWithMicrosoft() async {
     try {
       final microsoftProvider = OAuthProvider('microsoft.com');
@@ -389,7 +388,7 @@ class AuthService {
       microsoftProvider.addScope('email');
       microsoftProvider.addScope('profile');
 
-      // Configurar parámetros opcionales (tenant para organizaciones)
+      // Configurar parametros opcionales (tenant para organizaciones)
       microsoftProvider.setCustomParameters({
         'prompt': 'select_account', // Siempre mostrar selector de cuenta
       });
@@ -403,10 +402,10 @@ class AuthService {
         return null;
       }
 
-      // Verificar rol válido en Firestore o claims (y sincronizar si hace falta)
+      // Verificar rol valido en Firestore o claims (y sincronizar si hace falta)
       final existingRole = await _resolveRoleFromFirestoreOrClaims(user);
       if (existingRole == null) {
-        // Usuario nuevo de Microsoft - lanzar excepción para onboarding
+        // Usuario nuevo de Microsoft - lanzar excepcion para onboarding
         throw SocialUserNotRegisteredException(
           user: user,
           provider: SocialAuthProvider.microsoft,
@@ -422,13 +421,13 @@ class AuthService {
     }
   }
 
-  /// Completa el registro de un usuario social uniéndolo a una institución (código)
+  /// Completa el registro de un usuario social uniendolo a una institucion (codigo)
   Future<User?> completeSocialRegistrationWithInviteCode({
     required User socialUser,
     required String inviteCode,
     String? jobTitle,
   }) async {
-    // Validar código de invitación
+    // Validar codigo de invitacion
     final institution = await _institutionService.getInstitutionByInviteCode(
       inviteCode,
     );
@@ -436,7 +435,7 @@ class AuthService {
       throw AuthException(
         code: 'invalid-invite-code',
         message:
-            'El código de invitación no es válido o la institución no está activa.',
+            'El codigo de invitacion no es valido o la institucion no esta activa.',
       );
     }
 
@@ -450,7 +449,7 @@ class AuthService {
       role: 'employee',
     );
 
-    // Actualizar jobTitle si se proporcionó
+    // Actualizar jobTitle si se proporciono
     if (jobTitle != null && jobTitle.isNotEmpty) {
       await _userService.updateUserProfile(socialUser.uid, {
         'jobTitle': jobTitle,
@@ -460,7 +459,7 @@ class AuthService {
     return socialUser;
   }
 
-  /// Completa el registro de un usuario social usando una invitación por email
+  /// Completa el registro de un usuario social usando una invitacion por email
   Future<User?> completeSocialRegistrationWithInvitation({
     required User socialUser,
     required Invitation invitation,
@@ -478,21 +477,21 @@ class AuthService {
       role: invitation.role,
     );
 
-    // Actualizar jobTitle si se proporcionó
+    // Actualizar jobTitle si se proporciono
     if (jobTitle != null && jobTitle.isNotEmpty) {
       await _userService.updateUserProfile(socialUser.uid, {
         'jobTitle': jobTitle,
       });
     }
 
-    // Marcar la invitación como aceptada
+    // Marcar la invitacion como aceptada
     await invitationService.acceptInvitation(invitation.id);
 
     return socialUser;
   }
 
-  /// Registra una nueva institución con un administrador que viene de login social
-  /// El usuario social ya está autenticado, solo necesita subir docs y crear Firestore
+  /// Registra una nueva institucion con un administrador que viene de login social
+  /// El usuario social ya esta autenticado, solo necesita subir docs y crear Firestore
   Future<User?> registerInstitutionAdminWithSocialUser({
     required User socialUser,
     required String institutionName,
@@ -508,12 +507,12 @@ class AuthService {
     String? jobTitle,
     void Function(String)? onProgress,
   }) async {
-    // Verificar si el NIT ya está registrado
+    // Verificar si el NIT ya esta registrado
     final nitExists = await _safeNitAlreadyExists(institutionNit);
     if (nitExists) {
       throw AuthException(
         code: 'nit-already-exists',
-        message: 'El NIT ya está registrado en el sistema.',
+        message: 'El NIT ya esta registrado en el sistema.',
       );
     }
 
@@ -532,8 +531,8 @@ class AuthService {
         documentUrls[entry.key.name] = url;
       }
 
-      // PASO 2: Crear la institución en Firestore
-      onProgress?.call('Creando institución...');
+      // PASO 2: Crear la institucion en Firestore
+      onProgress?.call('Creando institucion...');
       institutionId = await _institutionService.createInstitution(
         name: institutionName,
         nit: institutionNit,
@@ -557,7 +556,7 @@ class AuthService {
         institutionId: institutionId,
       );
 
-      // Actualizar jobTitle si se proporcionó
+      // Actualizar jobTitle si se proporciono
       if (jobTitle != null && jobTitle.isNotEmpty) {
         await _userService.updateUserProfile(socialUser.uid, {
           'jobTitle': jobTitle,
@@ -566,7 +565,7 @@ class AuthService {
 
       return socialUser;
     } catch (e) {
-      // Rollback: Si algo falla después de crear la institución
+      // Rollback: Si algo falla despues de crear la institucion
       if (institutionId != null) {
         await _rollbackInstitution(institutionId);
       }

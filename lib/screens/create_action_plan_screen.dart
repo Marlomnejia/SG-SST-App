@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -107,7 +107,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
         (_currentUser!.institutionId ?? '').trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo identificar la instituciÃ³n del usuario.'),
+          content: Text('No se pudo identificar la institucion del usuario.'),
         ),
       );
       return;
@@ -256,7 +256,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'No se encontrÃ³ una instituciÃ³n asociada al usuario actual.',
+                  'No se encontro una institucion asociada al usuario actual.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium,
                 ),
@@ -475,7 +475,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  'No hay usuarios disponibles en la instituciÃ³n para asignar esta acciÃ³n.',
+                                  'No hay usuarios disponibles en la institucion para asignar esta accion.',
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: scheme.error,
                                   ),

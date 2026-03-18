@@ -133,7 +133,7 @@ class _TrainingDetailScreenState extends State<TrainingDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final String title = widget.data['title'] ?? 'Capacitación';
+    final String title = widget.data['title'] ?? 'Capacitacion';
     final String description = widget.data['description'] ?? '';
     final String category = widget.data['category'] ?? 'General';
     final int duration = widget.data['durationMinutes'] ?? 0;

@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Estados de una invitación
+/// Estados de una invitacion
 enum InvitationStatus {
   pending,
   accepted,
@@ -31,7 +31,7 @@ enum InvitationStatus {
   }
 }
 
-/// Modelo de invitación para registro de empleados
+/// Modelo de invitacion para registro de empleados
 class Invitation {
   final String id;
   final String email;

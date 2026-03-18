@@ -221,9 +221,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       await user?.sendEmailVerification();
-      _showMessage('Correo de verificaciÃƒÆ’Ã‚Â³n enviado.');
+      _showMessage('Correo de verificacion enviado.');
     } catch (_) {
-      _showMessage('No se pudo enviar la verificaciÃƒÆ’Ã‚Â³n.');
+      _showMessage('No se pudo enviar la verificacion.');
     }
   }
 
@@ -253,7 +253,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: currentController,
                     obscureText: obscure,
                     decoration: const InputDecoration(
-                      labelText: 'ContraseÃƒÆ’Ã‚Â±a actual',
+                      labelText: 'Contrasena actual',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -261,7 +261,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: newController,
                     obscureText: obscure,
                     decoration: const InputDecoration(
-                      labelText: 'Nueva contraseÃƒÆ’Ã‚Â±a',
+                      labelText: 'Nueva contrasena',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -269,7 +269,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: confirmController,
                     obscureText: obscure,
                     decoration: const InputDecoration(
-                      labelText: 'Confirmar nueva contraseÃƒÆ’Ã‚Â±a',
+                      labelText: 'Confirmar nueva contrasena',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -304,11 +304,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       return;
                     }
                     if (next.length < 6) {
-                      _showMessage('La nueva contraseÃƒÆ’Ã‚Â±a es muy corta.');
+                      _showMessage('La nueva contrasena es muy corta.');
                       return;
                     }
                     if (next != confirm) {
-                      _showMessage('Las contraseÃƒÆ’Ã‚Â±as no coinciden.');
+                      _showMessage('Las contrasenas no coinciden.');
                       return;
                     }
 
@@ -322,14 +322,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       if (context.mounted) {
                         Navigator.pop(context);
                       }
-                      _showMessage('ContraseÃƒÆ’Ã‚Â±a actualizada.');
+                      _showMessage('Contrasena actualizada.');
                     } on FirebaseAuthException catch (e) {
                       if (e.code == 'wrong-password') {
-                        _showMessage('ContraseÃƒÆ’Ã‚Â±a actual incorrecta.');
+                        _showMessage('Contrasena actual incorrecta.');
                       } else {
-                        _showMessage(
-                          'No se pudo actualizar la contraseÃƒÆ’Ã‚Â±a.',
-                        );
+                        _showMessage('No se pudo actualizar la contrasena.');
                       }
                     }
                   },

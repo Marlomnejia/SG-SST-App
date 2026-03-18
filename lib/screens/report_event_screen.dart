@@ -207,11 +207,9 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   String _expectedEventType(String reportType) {
     switch (reportType) {
       case 'Accidente con lesion':
-      case 'Accidente con lesión':
       case 'Emergencia / evento grave':
         return 'Accidente';
       case 'Condicion insegura':
-      case 'Condición insegura':
       case 'Acto inseguro':
       case 'Incidente (casi accidente)':
       case 'Riesgo psicosocial':

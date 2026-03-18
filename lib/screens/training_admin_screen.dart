@@ -36,7 +36,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('GestiÃ³n de capacitaciones'),
+        title: const Text('Gestion de capacitaciones'),
         actions: [
           IconButton(
             tooltip: 'Probar notificacion',
@@ -65,7 +65,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'AÃºn no hay capacitaciones creadas',
+                      'Aun no hay capacitaciones creadas',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -73,7 +73,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Crea la primera capacitaciÃ³n para tu instituciÃ³n.',
+                      'Crea la primera capacitacion para tu institucion.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -83,7 +83,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                     FilledButton.icon(
                       onPressed: _openForm,
                       icon: const Icon(Icons.add),
-                      label: const Text('Crear capacitaciÃ³n'),
+                      label: const Text('Crear capacitacion'),
                     ),
                   ],
                 ),
@@ -304,8 +304,8 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                                       ? Icons.event_available_outlined
                                       : Icons.ondemand_video_outlined,
                                   label: isScheduled
-                                      ? 'SesiÃ³n programada'
-                                      : 'Contenido en lÃ­nea',
+                                      ? 'Sesion programada'
+                                      : 'Contenido en linea',
                                 ),
                                 const SizedBox(height: 10),
                                 Row(
@@ -432,7 +432,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Acciones de gestiÃ³n',
+                                        'Acciones de gestion',
                                         style: Theme.of(context)
                                             .textTheme
                                             .labelLarge
@@ -506,7 +506,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                                                 size: 18,
                                               ),
                                               label: const Text(
-                                                'Abrir reuniÃ³n',
+                                                'Abrir reunion',
                                               ),
                                             ),
                                           if (!isScheduled &&
@@ -559,7 +559,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add),
-        label: const Text('Crear capacitaciÃ³n'),
+        label: const Text('Crear capacitacion'),
       ),
     );
   }
@@ -606,6 +606,8 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       );
       return;
     }
+    if (!mounted) return;
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -690,16 +692,14 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
     if (uri == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enlace de reuniÃ³n invÃ¡lido.')),
+        const SnackBar(content: Text('Enlace de reunion invalido.')),
       );
       return;
     }
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo abrir el enlace de reuniÃ³n.'),
-        ),
+        const SnackBar(content: Text('No se pudo abrir el enlace de reunion.')),
       );
     }
   }
@@ -871,7 +871,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Cancelar capacitaciÃ³n'),
+          title: const Text('Cancelar capacitacion'),
           content: const Text(
             'Se marcara como cancelada y se notificara a los usuarios.',
           ),
@@ -1090,29 +1090,27 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
     if (uri == null || !_isMeetingUrlValid) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enlace de reuniÃ³n invÃ¡lido.')),
+        const SnackBar(content: Text('Enlace de reunion invalido.')),
       );
       return;
     }
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo abrir el enlace de reuniÃ³n.'),
-        ),
+        const SnackBar(content: Text('No se pudo abrir el enlace de reunion.')),
       );
     }
   }
 
   String? get _disabledMessage {
     if (_isCancelledTraining) {
-      return 'La capacitaciÃ³n fue cancelada y no admite cambios.';
+      return 'La capacitacion fue cancelada y no admite cambios.';
     }
     if (_saving) return null;
     if (_title.text.trim().isEmpty) return 'Agrega un titulo para continuar.';
     if (_desc.text.trim().isEmpty) return 'Agrega una descripcion breve.';
     if (_topic.text.trim().isEmpty) {
-      return 'Agrega un tema para la capacitaciÃ³n.';
+      return 'Agrega un tema para la capacitacion.';
     }
     if (_type == TrainingType.scheduled.name) {
       if (!_isRangeValid) {
@@ -1122,10 +1120,10 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         return 'Indica el lugar para la modalidad presencial.';
       }
       if (_mode == 'virtual' && _meetUrl.text.trim().isEmpty) {
-        return 'Ingresa el enlace de reuniÃ³n para modalidad virtual.';
+        return 'Ingresa el enlace de reunion para modalidad virtual.';
       }
       if (_mode == 'virtual' && !_isMeetingUrlValid) {
-        return 'Usa un enlace vÃ¡lido de reuniÃ³n (Meet, Zoom, Teams, Webex o Jitsi).';
+        return 'Usa un enlace valido de reunion (Meet, Zoom, Teams, Webex o Jitsi).';
       }
       return null;
     }
@@ -1269,14 +1267,14 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Nueva capacitaciÃ³n',
+            'Nueva capacitacion',
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            'Configura una capacitaciÃ³n SST para tu instituciÃ³n',
+            'Configura una capacitacion SST para tu institucion',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -1389,7 +1387,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Nueva capacitaciÃ³n')),
+      appBar: AppBar(title: const Text('Nueva capacitacion')),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -1409,7 +1407,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
               _buildSection(
                 context,
                 title: 'Informacion basica',
-                subtitle: 'Define los datos generales de la capacitaciÃ³n.',
+                subtitle: 'Define los datos generales de la capacitacion.',
                 icon: Icons.assignment_outlined,
                 children: [
                   DropdownButtonFormField<String>(
@@ -1570,20 +1568,20 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                         onChanged: (_) => setState(() {}),
                         decoration: _fieldDecoration(
                           context,
-                          label: 'Enlace de reuniÃ³n *',
+                          label: 'Enlace de reunion *',
                           hint:
                               'https://meet.google.com/... o enlace de Zoom/Teams',
                         ),
                         validator: (v) {
                           if (_mode == 'virtual' &&
                               (v == null || v.trim().isEmpty)) {
-                            return 'La URL de reuniÃ³n es obligatoria en modalidad virtual.';
+                            return 'La URL de reunion es obligatoria en modalidad virtual.';
                           }
                           if (_mode == 'virtual' &&
                               v != null &&
                               v.trim().isNotEmpty &&
                               !_isMeetingUrlValid) {
-                            return 'Usa un enlace vÃ¡lido de reuniÃ³n (Meet, Zoom, Teams, Webex o Jitsi).';
+                            return 'Usa un enlace valido de reunion (Meet, Zoom, Teams, Webex o Jitsi).';
                           }
                           return null;
                         },
@@ -1636,7 +1634,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                           height: 20,
                           child: CircularProgressIndicator(),
                         )
-                      : const Text('Guardar capacitaciÃ³n'),
+                      : const Text('Guardar capacitacion'),
                 ),
               ),
               if (_isEditing && !_isCancelledTraining) ...[
@@ -1662,7 +1660,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.cancel_outlined),
-                    label: const Text('Cancelar capacitaciÃ³n'),
+                    label: const Text('Cancelar capacitacion'),
                   ),
                 ),
               ],
@@ -1766,7 +1764,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       );
 
       if (widget.editId == null) {
-        // createdBy lo aÃ±ade el servicio con el uid autenticado.
+        // createdBy lo anade el servicio con el uid autenticado.
         final model = TrainingModuleModel(
           type: _type,
           title: _title.text.trim(),
@@ -1811,7 +1809,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       );
     } on FirebaseException catch (e, st) {
       debugPrint(
-        'Error Firebase guardando capacitaciÃ³n: ${e.code} ${e.message}',
+        'Error Firebase guardando capacitacion: ${e.code} ${e.message}',
       );
       debugPrint(st.toString());
       if (!mounted) return;
@@ -1821,7 +1819,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         SnackBar(content: Text('No se pudo guardar ($code): $message')),
       );
     } catch (e, st) {
-      debugPrint('Error guardando capacitaciÃ³n: $e');
+      debugPrint('Error guardando capacitacion: $e');
       debugPrint(st.toString());
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1838,9 +1836,9 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Cancelar capacitaciÃ³n'),
+          title: const Text('Cancelar capacitacion'),
           content: const Text(
-            'Esta acciÃ³n marcarÃ¡ la capacitaciÃ³n como cancelada y notificarÃ¡ a usuarios.',
+            'Esta accion marcara la capacitacion como cancelada y notificara a usuarios.',
           ),
           actions: [
             TextButton(
@@ -1884,7 +1882,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       ).showSnackBar(const SnackBar(content: Text('Capacitacion cancelada.')));
     } on FirebaseException catch (e, st) {
       debugPrint(
-        'Error Firebase cancelando capacitaciÃ³n: ${e.code} ${e.message}',
+        'Error Firebase cancelando capacitacion: ${e.code} ${e.message}',
       );
       debugPrint(st.toString());
       if (!mounted) return;
@@ -1894,7 +1892,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         SnackBar(content: Text('No se pudo cancelar ($code): $message')),
       );
     } catch (e, st) {
-      debugPrint('Error cancelando capacitaciÃ³n: $e');
+      debugPrint('Error cancelando capacitacion: $e');
       debugPrint(st.toString());
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -2701,7 +2699,7 @@ class _AttendanceSheetState extends State<_AttendanceSheet> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'AÃºn no hay confirmaciones',
+                          'Aun no hay confirmaciones',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),

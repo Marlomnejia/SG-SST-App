@@ -143,7 +143,7 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       case 'reportado':
         return (label: 'Reportado', icon: Icons.assignment_turned_in_outlined);
       case 'en_revision':
-        return (label: 'En revisión', icon: Icons.search_outlined);
+        return (label: 'En revision', icon: Icons.search_outlined);
       case 'en_proceso':
         return (label: 'En proceso', icon: Icons.build_outlined);
       case 'cerrado':

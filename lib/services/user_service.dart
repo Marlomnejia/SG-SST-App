@@ -44,7 +44,7 @@ class UserService {
     return doc.data();
   }
 
-  /// Crea perfil de usuario estÃ¡ndar (sin instituciÃ³n asignada inicialmente)
+  /// Crea perfil de usuario estandar (sin institucion asignada inicialmente)
   Future<void> createUserProfile(User user, {String role = 'user'}) async {
     await _firestore.collection('users').doc(user.uid).set({
       'email': user.email,
@@ -62,7 +62,7 @@ class UserService {
     }, SetOptions(merge: true));
   }
 
-  /// Crea perfil de administrador de instituciÃ³n
+  /// Crea perfil de administrador de institucion
   Future<void> createInstitutionAdminProfile({
     required String uid,
     required String email,
@@ -80,13 +80,13 @@ class UserService {
       'phone': '',
       'notificationsEnabled': true,
       'fcmTokens': [],
-      'role': 'admin_sst', // Nuevo rol para admin de instituciÃ³n
+      'role': 'admin_sst', // Nuevo rol para admin de institucion
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  /// Crea perfil de usuario vinculado a una instituciÃ³n
+  /// Crea perfil de usuario vinculado a una institucion
   Future<void> createUserWithInstitution({
     required String uid,
     required String email,
@@ -111,7 +111,7 @@ class UserService {
     });
   }
 
-  /// Vincula un usuario existente a una instituciÃ³n mediante cÃ³digo de invitaciÃ³n
+  /// Vincula un usuario existente a una institucion mediante codigo de invitacion
   Future<void> linkUserToInstitution(String uid, String institutionId) async {
     await _firestore.collection('users').doc(uid).update({
       'institutionId': institutionId,
@@ -171,7 +171,7 @@ class UserService {
     }, SetOptions(merge: true));
   }
 
-  /// Obtiene usuarios de una instituciÃ³n especÃ­fica
+  /// Obtiene usuarios de una institucion especifica
   Stream<QuerySnapshot> streamUsersByInstitution(String institutionId) {
     return _institutionUserStreams.putIfAbsent(
       institutionId,
@@ -197,7 +197,7 @@ class UserService {
     return snapshot.count ?? 0;
   }
 
-  /// Verifica si el usuario tiene una instituciÃ³n asignada
+  /// Verifica si el usuario tiene una institucion asignada
   Future<bool> hasInstitution(String uid) async {
     final doc = await _firestore.collection('users').doc(uid).get();
     if (!doc.exists) return false;
@@ -231,7 +231,7 @@ class UserService {
     );
   }
 
-  /// Obtiene el nombre de una instituciÃ³n por su ID
+  /// Obtiene el nombre de una institucion por su ID
   Future<String?> getInstitutionName(String institutionId) async {
     try {
       final doc = await _firestore

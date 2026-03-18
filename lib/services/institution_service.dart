@@ -14,7 +14,7 @@ class InstitutionService {
   static const String _chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   static const int _codeLength = 6;
 
-  /// Genera un código de invitación único de 6 caracteres
+  /// Genera un codigo de invitacion unico de 6 caracteres
   String _generateInviteCode() {
     final random = Random.secure();
     return List.generate(
@@ -23,14 +23,14 @@ class InstitutionService {
     ).join();
   }
 
-  /// Genera un código de invitación.
+  /// Genera un codigo de invitacion.
   /// Nota: se evita la consulta previa por reglas de lectura en registro inicial.
-  /// El espacio de códigos (32^6) hace la colisión extremadamente improbable.
+  /// El espacio de codigos (32^6) hace la colision extremadamente improbable.
   Future<String> generateUniqueInviteCode() async {
     return _generateInviteCode();
   }
 
-  /// Crea una nueva institución y retorna su ID
+  /// Crea una nueva institucion y retorna su ID
   /// Acepta los nuevos campos: type, phones, email, documentsUrls, department, city
   Future<String> createInstitution({
     required String name,
@@ -58,9 +58,9 @@ class InstitutionService {
       'email': email,
       'documentsUrls': documentsUrls,
       'inviteCode': inviteCode,
-      // Estado inicial 'pending' hasta verificación legal
+      // Estado inicial 'pending' hasta verificacion legal
       'status': 'pending',
-      // Compatibilidad: marcar isActive=false mientras está pendiente
+      // Compatibilidad: marcar isActive=false mientras esta pendiente
       'isActive': false,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -69,7 +69,7 @@ class InstitutionService {
     return docRef.id;
   }
 
-  /// Obtiene una institución por su ID
+  /// Obtiene una institucion por su ID
   Future<Institution?> getInstitutionById(String id) async {
     final doc = await _firestore.collection(_collection).doc(id).get();
     if (!doc.exists) {
@@ -78,7 +78,7 @@ class InstitutionService {
     return Institution.fromFirestore(doc);
   }
 
-  /// Obtiene una institución por su código de invitación
+  /// Obtiene una institucion por su codigo de invitacion
   Future<Institution?> getInstitutionByInviteCode(String code) async {
     final snapshot = await _firestore
         .collection(_collection)
@@ -94,7 +94,7 @@ class InstitutionService {
     return Institution.fromFirestore(snapshot.docs.first);
   }
 
-  /// Actualiza los datos de una institución
+  /// Actualiza los datos de una institucion
   Future<void> updateInstitution(String id, Map<String, dynamic> data) async {
     await _firestore.collection(_collection).doc(id).update({
       ...data,
@@ -102,7 +102,7 @@ class InstitutionService {
     });
   }
 
-  /// Regenera el código de invitación de una institución
+  /// Regenera el codigo de invitacion de una institucion
   Future<String> regenerateInviteCode(String institutionId) async {
     final newCode = await generateUniqueInviteCode();
     await _firestore.collection(_collection).doc(institutionId).update({
@@ -112,7 +112,7 @@ class InstitutionService {
     return newCode;
   }
 
-  /// Stream de una institución específica
+  /// Stream de una institucion especifica
   Stream<Institution?> streamInstitution(String id) {
     return _institutionStreams.putIfAbsent(
       id,
@@ -123,7 +123,7 @@ class InstitutionService {
     );
   }
 
-  /// Verifica si un NIT ya está registrado
+  /// Verifica si un NIT ya esta registrado
   Future<bool> isNitRegistered(String nit) async {
     final snapshot = await _firestore
         .collection(_collection)
@@ -133,15 +133,15 @@ class InstitutionService {
     return snapshot.docs.isNotEmpty;
   }
 
-  /// Valida un código de invitación y retorna los datos de la institución
-  /// Lanza [InviteCodeException] si el código es inválido o la institución no está activa
+  /// Valida un codigo de invitacion y retorna los datos de la institucion
+  /// Lanza [InviteCodeException] si el codigo es invalido o la institucion no esta activa
   Future<InstitutionValidationResult> validateInviteCode(String code) async {
     final normalizedCode = code.toUpperCase().trim();
 
     if (normalizedCode.length != _codeLength) {
       throw InviteCodeException(
         code: 'invalid-format',
-        message: 'El código debe tener $_codeLength caracteres.',
+        message: 'El codigo debe tener $_codeLength caracteres.',
       );
     }
 
@@ -154,7 +154,7 @@ class InstitutionService {
     if (snapshot.docs.isEmpty) {
       throw InviteCodeException(
         code: 'code-not-found',
-        message: 'El código de invitación no existe.',
+        message: 'El codigo de invitacion no existe.',
       );
     }
 
@@ -164,7 +164,7 @@ class InstitutionService {
     if ((data['status'] ?? 'pending') != 'active') {
       throw InviteCodeException(
         code: 'institution-inactive',
-        message: 'La institución no está activa.',
+        message: 'La institucion no esta activa.',
       );
     }
 
@@ -175,7 +175,7 @@ class InstitutionService {
     );
   }
 
-  /// Obtiene el conteo de usuarios de una institución
+  /// Obtiene el conteo de usuarios de una institucion
   Future<int> getUserCount(String institutionId) async {
     final snapshot = await _firestore
         .collection('users')
@@ -185,7 +185,7 @@ class InstitutionService {
     return snapshot.count ?? 0;
   }
 
-  /// Stream de instituciones pendientes de aprobación (para super admin)
+  /// Stream de instituciones pendientes de aprobacion (para super admin)
   Stream<List<Institution>> streamPendingInstitutions() {
     return _pendingInstitutionsStream ??= _firestore
         .collection(_collection)
@@ -214,7 +214,7 @@ class InstitutionService {
         .asBroadcastStream();
   }
 
-  /// Aprueba una institución (cambia status a 'active')
+  /// Aprueba una institucion (cambia status a 'active')
   Future<_InstitutionActor> _resolveActor() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null || uid.isEmpty) {
@@ -263,7 +263,7 @@ class InstitutionService {
     });
   }
 
-  /// Rechaza una institución (cambia status a 'rejected')
+  /// Rechaza una institucion (cambia status a 'rejected')
   Future<void> rejectInstitution(String institutionId, {String? reason}) async {
     final actor = await _resolveActor();
     final cleanReason = reason?.trim();
@@ -336,7 +336,7 @@ class _InstitutionActor {
   const _InstitutionActor({required this.uid, required this.role});
 }
 
-/// Resultado de validación de código de invitación
+/// Resultado de validacion de codigo de invitacion
 class InstitutionValidationResult {
   final String institutionId;
   final String institutionName;
@@ -349,7 +349,7 @@ class InstitutionValidationResult {
   });
 }
 
-/// Excepción para errores de código de invitación
+/// Excepcion para errores de codigo de invitacion
 class InviteCodeException implements Exception {
   final String code;
   final String message;

@@ -37,12 +37,7 @@ class ReportAttachment {
   });
 
   Map<String, dynamic> toMap() {
-    return {
-      'type': type,
-      'url': url,
-      'path': path,
-      'thumbUrl': thumbUrl,
-    };
+    return {'type': type, 'url': url, 'path': path, 'thumbUrl': thumbUrl};
   }
 }
 

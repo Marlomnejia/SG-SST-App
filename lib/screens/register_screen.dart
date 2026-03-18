@@ -43,14 +43,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final email = _emailController.text.trim().toLowerCase();
 
     try {
-      // 1. Buscar invitación pendiente para este email
+      // 1. Buscar invitacion pendiente para este email
       final invitation = await _invitationService.findPendingInvitationByEmail(
         email,
       );
 
       if (invitation == null) {
         _showMessage(
-          'Este correo no ha sido invitado por ninguna institución. Contacta a tu administrador.',
+          'Este correo no ha sido invitado por ninguna institucion. Contacta a tu administrador.',
         );
         setState(() => _isLoading = false);
         return;
@@ -63,7 +63,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       if (user != null) {
-        // 3. Crear perfil en Firestore con datos de la invitación
+        // 3. Crear perfil en Firestore con datos de la invitacion
         await _userService.createUserWithInstitution(
           uid: user.uid,
           email: email,
@@ -73,10 +73,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
           role: invitation.role,
         );
 
-        // 4. Marcar invitación como aceptada
+        // 4. Marcar invitacion como aceptada
         await _invitationService.acceptInvitation(invitation.id);
 
-        // 5. Cerrar sesión para que el usuario verifique su email
+        // 5. Cerrar sesion para que el usuario verifique su email
         await _authService.signOut();
       }
 
@@ -88,9 +88,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
             icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
             title: const Text('¡Registro Exitoso!'),
             content: Text(
-              'Tu cuenta ha sido creada y vinculada a ${invitation.institutionName ?? "la institución"}.\n\n'
-              'Hemos enviado un correo de verificación a $email. '
-              'Por favor revísalo (incluyendo la carpeta de Spam) antes de iniciar sesión.',
+              'Tu cuenta ha sido creada y vinculada a ${invitation.institutionName ?? "la institucion"}.\n\n'
+              'Hemos enviado un correo de verificacion a $email. '
+              'Por favor revisalo (incluyendo la carpeta de Spam) antes de iniciar sesion.',
             ),
             actions: [
               FilledButton(
@@ -126,7 +126,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       case 'invalid-email':
         return 'Correo no valido.';
       case 'weak-password':
-        return 'La contraseña es muy débil.';
+        return 'La contrasena es muy debil.';
       default:
         return 'No se pudo crear la cuenta. Intenta de nuevo.';
     }
@@ -173,7 +173,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Usa el correo con el que fuiste invitado por tu institución.',
+                        'Usa el correo con el que fuiste invitado por tu institucion.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
@@ -217,7 +217,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Ingresa una contraseña.';
+                            return 'Ingresa una contrasena.';
                           }
                           if (value.length < 6) {
                             return 'Minimo 6 caracteres.';
@@ -230,14 +230,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         controller: _confirmPasswordController,
                         obscureText: _isPasswordObscured,
                         decoration: const InputDecoration(
-                          labelText: 'Confirmar contraseña',
+                          labelText: 'Confirmar contrasena',
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Confirma tu contraseña.';
+                            return 'Confirma tu contrasena.';
                           }
                           if (value != _passwordController.text) {
-                            return 'Las contraseñas no coinciden.';
+                            return 'Las contrasenas no coinciden.';
                           }
                           return null;
                         },

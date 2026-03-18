@@ -6,7 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import '../firebase_options.dart';
 
-/// Tipos de documentos para verificación de instituciones
+/// Tipos de documentos para verificacion de instituciones
 enum DocumentType {
   rectorIdCard,
   appointmentAct,
@@ -16,11 +16,11 @@ enum DocumentType {
   String get displayName {
     switch (this) {
       case DocumentType.rectorIdCard:
-        return 'Cédula del Rector';
+        return 'Cedula del Rector';
       case DocumentType.appointmentAct:
-        return 'Acta de Posesión';
+        return 'Acta de Posesion';
       case DocumentType.chamberOfCommerce:
-        return 'Cámara de Comercio';
+        return 'Camara de Comercio';
       case DocumentType.rut:
         return 'RUT';
     }
@@ -40,7 +40,7 @@ enum DocumentType {
   }
 }
 
-/// Resultado de selección de archivo
+/// Resultado de seleccion de archivo
 class SelectedFile {
   final String name;
   final String? path;
@@ -76,7 +76,7 @@ class DocumentUploadService {
   /// Extensiones permitidas para documentos
   static const List<String> allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
 
-  /// Tamaño máximo de archivo (5 MB)
+  /// Tamano maximo de archivo (5 MB)
   static const int maxFileSizeBytes = 5 * 1024 * 1024;
 
   /// Selecciona un archivo usando file_picker
@@ -94,11 +94,11 @@ class DocumentUploadService {
 
       final file = result.files.first;
 
-      // Validar tamaño
+      // Validar tamano
       if (file.size > maxFileSizeBytes) {
         throw DocumentUploadException(
           code: 'file-too-large',
-          message: 'El archivo excede el tamaño máximo de 5 MB.',
+          message: 'El archivo excede el tamano maximo de 5 MB.',
         );
       }
 
@@ -143,7 +143,7 @@ class DocumentUploadService {
     if (!file.isValid) {
       throw DocumentUploadException(
         code: 'invalid-file',
-        message: 'El archivo seleccionado no es válido.',
+        message: 'El archivo seleccionado no es valido.',
       );
     }
 
@@ -169,7 +169,7 @@ class DocumentUploadService {
         onProgress: onProgress,
       );
     } on FirebaseException catch (e) {
-      // Reintento de una sola vez si la sesión/token todavía no se propagó.
+      // Reintento de una sola vez si la sesion/token todavia no se propago.
       if (e.code == 'unauthorized' || e.code == 'permission-denied') {
         try {
           await auth.currentUser?.getIdToken(true);
@@ -181,7 +181,7 @@ class DocumentUploadService {
             onProgress: onProgress,
           );
         } on FirebaseException catch (_) {
-          // continúa al throw detallado original.
+          // continua al throw detallado original.
         }
       }
       throw DocumentUploadException(
@@ -192,7 +192,7 @@ class DocumentUploadService {
     }
   }
 
-  /// Sube múltiples documentos
+  /// Sube multiples documentos
   Future<Map<DocumentType, String>> uploadMultipleDocuments({
     required String nit,
     required Map<DocumentType, SelectedFile> files,
@@ -293,7 +293,7 @@ class DocumentUploadService {
   }
 }
 
-/// Excepción para errores de carga de documentos
+/// Excepcion para errores de carga de documentos
 class DocumentUploadException implements Exception {
   final String code;
   final String message;

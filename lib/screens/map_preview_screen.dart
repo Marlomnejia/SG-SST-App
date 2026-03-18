@@ -17,17 +17,12 @@ class MapPreviewScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final center = LatLng(latitude, longitude);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ubicacion'),
-      ),
+      appBar: AppBar(title: const Text('Ubicacion')),
       body: Column(
         children: [
           Expanded(
             child: GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: center,
-                zoom: 16,
-              ),
+              initialCameraPosition: CameraPosition(target: center, zoom: 16),
               markers: {
                 Marker(
                   markerId: const MarkerId('event_location'),
@@ -58,8 +53,8 @@ class MapPreviewScreen extends StatelessWidget {
                 Text(
                   'Mapa Google',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),

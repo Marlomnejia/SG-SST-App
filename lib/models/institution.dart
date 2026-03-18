@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Tipos de institución
+/// Tipos de institucion
 enum InstitutionType {
   public,
   private;
@@ -8,7 +8,7 @@ enum InstitutionType {
   String get displayName {
     switch (this) {
       case InstitutionType.public:
-        return 'Pública';
+        return 'Publica';
       case InstitutionType.private:
         return 'Privada';
     }
@@ -26,7 +26,7 @@ enum InstitutionType {
   }
 }
 
-/// Estados de verificación de institución
+/// Estados de verificacion de institucion
 enum InstitutionStatus {
   pending,
   active,
@@ -36,7 +36,7 @@ enum InstitutionStatus {
   String get displayName {
     switch (this) {
       case InstitutionStatus.pending:
-        return 'Pendiente de verificación';
+        return 'Pendiente de verificacion';
       case InstitutionStatus.active:
         return 'Activa';
       case InstitutionStatus.suspended:
@@ -62,15 +62,15 @@ enum InstitutionStatus {
   }
 }
 
-/// URLs de documentos requeridos para verificación
+/// URLs de documentos requeridos para verificacion
 class InstitutionDocuments {
-  /// Cédula del rector (obligatorio para todos)
+  /// Cedula del rector (obligatorio para todos)
   final String? rectorIdCard;
 
-  /// Acta de posesión (solo instituciones públicas)
+  /// Acta de posesion (solo instituciones publicas)
   final String? appointmentAct;
 
-  /// Cámara de comercio (solo instituciones privadas)
+  /// Camara de comercio (solo instituciones privadas)
   final String? chamberOfCommerce;
 
   /// RUT (solo instituciones privadas)
@@ -116,7 +116,7 @@ class InstitutionDocuments {
     );
   }
 
-  /// Verifica si todos los documentos requeridos están presentes según el tipo
+  /// Verifica si todos los documentos requeridos estan presentes segun el tipo
   bool isComplete(InstitutionType type) {
     if (rectorIdCard == null || rectorIdCard!.isEmpty) return false;
 
@@ -142,13 +142,13 @@ class Institution {
 
   final String address;
 
-  /// Tipo de institución: pública o privada
+  /// Tipo de institucion: publica o privada
   final InstitutionType type;
 
-  /// Estado de verificación: pending, active, rejected
+  /// Estado de verificacion: pending, active, rejected
   final InstitutionStatus status;
 
-  /// Teléfono fijo de la institución
+  /// Telefono fijo de la institucion
   final String institutionPhone;
 
   /// Celular del rector
@@ -157,10 +157,10 @@ class Institution {
   /// Email de contacto (preferiblemente institucional)
   final String email;
 
-  /// URLs de documentos para verificación
+  /// URLs de documentos para verificacion
   final InstitutionDocuments documents;
 
-  /// Código de invitación para empleados (solo activo cuando status == active)
+  /// Codigo de invitacion para empleados (solo activo cuando status == active)
   final String inviteCode;
 
   /// Compatibilidad con versiones anteriores
@@ -172,7 +172,7 @@ class Institution {
   /// Mensaje de rechazo (si aplica)
   final String? rejectionReason;
 
-  /// Motivo de suspensión (si aplica)
+  /// Motivo de suspension (si aplica)
   final String? suspensionReason;
 
   Institution({
@@ -286,7 +286,7 @@ class Institution {
     );
   }
 
-  /// Verifica si la institución tiene todos los documentos requeridos
+  /// Verifica si la institucion tiene todos los documentos requeridos
   bool get hasRequiredDocuments => documents.isComplete(type);
 
   /// Nombre legible del tipo

@@ -22,7 +22,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   final _step1FormKey = GlobalKey<FormState>();
   final _step2FormKey = GlobalKey<FormState>();
 
-  // Controladores de Institución (Paso 0)
+  // Controladores de Institucion (Paso 0)
   final _institutionNameController = TextEditingController();
   final _nitController = TextEditingController();
   final _addressController = TextEditingController();
@@ -47,13 +47,13 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   bool _isUploading = false;
   String _uploadingDocument = '';
 
-  // Tipo de institución
+  // Tipo de institucion
   InstitutionType _institutionType = InstitutionType.private;
 
   // Documentos seleccionados
   final Map<DocumentType, SelectedFile> _selectedDocuments = {};
 
-  // Ubicación - Departamentos y Ciudades
+  // Ubicacion - Departamentos y Ciudades
   List<Map<String, dynamic>> _departamentos = [];
   List<String> _ciudades = [];
   String? _selectedDepartment;
@@ -63,7 +63,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   /// Indica si el registro viene de un proveedor social (Google/Microsoft)
   bool get _isSocialRegistration => widget.socialUserData != null;
 
-  /// Documentos requeridos según el tipo de institución
+  /// Documentos requeridos segun el tipo de institucion
   List<DocumentType> get _requiredDocuments {
     final docs = [DocumentType.rectorIdCard];
     if (_institutionType == InstitutionType.public) {
@@ -75,7 +75,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
     return docs;
   }
 
-  /// Verifica si todos los documentos requeridos están seleccionados
+  /// Verifica si todos los documentos requeridos estan seleccionados
   bool get _hasAllRequiredDocuments {
     for (final doc in _requiredDocuments) {
       if (!_selectedDocuments.containsKey(doc)) return false;
@@ -228,7 +228,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
     // Validar todos los formularios
     if (!(_step0FormKey.currentState?.validate() ?? false)) {
       setState(() => _currentStep = 0);
-      _showMessage('Por favor completa los datos de la institución.');
+      _showMessage('Por favor completa los datos de la institucion.');
       return;
     }
 
@@ -263,7 +263,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
         }
       }
 
-      // Registrar la institución y el administrador
+      // Registrar la institucion y el administrador
       // AuthService se encarga de: 1) Crear usuario, 2) Subir docs, 3) Crear Firestore
       if (_isSocialRegistration) {
         await _authService.registerInstitutionAdminWithSocialUser(
@@ -307,7 +307,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           builder: (ctx) => AlertDialog(
             title: const Text('¡Registro Exitoso!'),
             content: Text(
-              'La institución ha sido registrada. Hemos enviado un correo de verificación a $email. Por favor revísalo (incluyendo la carpeta de Spam) antes de continuar.',
+              'La institucion ha sido registrada. Hemos enviado un correo de verificacion a $email. Por favor revisalo (incluyendo la carpeta de Spam) antes de continuar.',
             ),
             actions: [
               TextButton(
@@ -352,13 +352,13 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   String _mapAuthError(String code) {
     switch (code) {
       case 'email-already-in-use':
-        return 'El correo ya está registrado.';
+        return 'El correo ya esta registrado.';
       case 'invalid-email':
-        return 'Correo no válido.';
+        return 'Correo no valido.';
       case 'weak-password':
-        return 'La contraseña es muy débil.';
+        return 'La contrasena es muy debil.';
       case 'nit-already-exists':
-        return 'El NIT ya está registrado en el sistema.';
+        return 'El NIT ya esta registrado en el sistema.';
       default:
         return 'Error al registrar. Intenta de nuevo.';
     }
@@ -376,7 +376,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Registrar Institución'),
+        title: const Text('Registrar Institucion'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: _isLoading ? null : () => Navigator.pop(context),
@@ -422,7 +422,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               const SizedBox(width: 12),
               TextButton(
                 onPressed: details.onStepCancel,
-                child: Text(_currentStep == 0 ? 'Cancelar' : 'Atrás'),
+                child: Text(_currentStep == 0 ? 'Cancelar' : 'Atras'),
               ),
             ],
           ),
@@ -430,15 +430,15 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
       },
       steps: [
         Step(
-          title: const Text('Datos de la Institución'),
-          subtitle: const Text('Nombre, NIT y dirección'),
+          title: const Text('Datos de la Institucion'),
+          subtitle: const Text('Nombre, NIT y direccion'),
           isActive: _currentStep >= 0,
           state: _currentStep > 0 ? StepState.complete : StepState.indexed,
           content: _buildStep0InstitutionData(scheme),
         ),
         Step(
           title: const Text('Tipo y Contacto'),
-          subtitle: const Text('Teléfonos y correo'),
+          subtitle: const Text('Telefonos y correo'),
           isActive: _currentStep >= 1,
           state: _currentStep > 1 ? StepState.complete : StepState.indexed,
           content: _buildStep1ContactData(scheme),
@@ -447,8 +447,8 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           title: const Text('Documentos'),
           subtitle: Text(
             _institutionType == InstitutionType.public
-                ? 'Cédula y Acta de Posesión'
-                : 'Cédula, Cámara de Comercio y RUT',
+                ? 'Cedula y Acta de Posesion'
+                : 'Cedula, Camara de Comercio y RUT',
           ),
           isActive: _currentStep >= 2,
           state: _currentStep > 2 ? StepState.complete : StepState.indexed,
@@ -478,21 +478,21 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           _buildSectionHeader(
             scheme,
             icon: Icons.business_rounded,
-            title: 'Información básica',
-            subtitle: 'Datos legales de la institución',
+            title: 'Informacion basica',
+            subtitle: 'Datos legales de la institucion',
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _institutionNameController,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
-              labelText: 'Nombre de la Institución *',
+              labelText: 'Nombre de la Institucion *',
               prefixIcon: Icon(Icons.business_outlined),
-              hintText: 'Ej: Colegio San José',
+              hintText: 'Ej: Colegio San Jose',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return 'Ingresa el nombre de la institución.';
+                return 'Ingresa el nombre de la institucion.';
               }
               if (value.trim().length < 3) {
                 return 'El nombre es muy corto.';
@@ -509,14 +509,14 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               labelText: 'NIT *',
               prefixIcon: Icon(Icons.numbers_outlined),
               hintText: 'Ej: 900123456',
-              helperText: 'Sin dígito de verificación ni guiones',
+              helperText: 'Sin digito de verificacion ni guiones',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
                 return 'Ingresa el NIT.';
               }
               if (value.length < 9) {
-                return 'El NIT debe tener al menos 9 dígitos.';
+                return 'El NIT debe tener al menos 9 digitos.';
               }
               return null;
             },
@@ -586,13 +586,13 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             controller: _addressController,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
-              labelText: 'Dirección *',
+              labelText: 'Direccion *',
               prefixIcon: Icon(Icons.location_on_outlined),
               hintText: 'Ej: Calle 10 # 20-30',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return 'Ingresa la dirección.';
+                return 'Ingresa la direccion.';
               }
               return null;
             },
@@ -611,7 +611,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           _buildSectionHeader(
             scheme,
             icon: Icons.category_rounded,
-            title: 'Tipo de Institución',
+            title: 'Tipo de Institucion',
             subtitle:
                 'Selecciona el tipo para determinar los documentos requeridos',
           ),
@@ -619,7 +619,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           DropdownButtonFormField<InstitutionType>(
             initialValue: _institutionType,
             decoration: const InputDecoration(
-              labelText: 'Tipo de Institución *',
+              labelText: 'Tipo de Institucion *',
               prefixIcon: Icon(Icons.account_balance_outlined),
             ),
             items: InstitutionType.values.map((type) {
@@ -643,23 +643,23 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             scheme,
             icon: Icons.phone_rounded,
             title: 'Datos de Contacto',
-            subtitle: 'Teléfonos y correo electrónico',
+            subtitle: 'Telefonos y correo electronico',
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _institutionPhoneController,
             keyboardType: TextInputType.phone,
             decoration: const InputDecoration(
-              labelText: 'Teléfono Fijo de la Institución *',
+              labelText: 'Telefono Fijo de la Institucion *',
               prefixIcon: Icon(Icons.phone_outlined),
               hintText: 'Ej: 6011234567',
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
-                return 'Ingresa el teléfono fijo.';
+                return 'Ingresa el telefono fijo.';
               }
               if (value.length < 7) {
-                return 'Teléfono no válido.';
+                return 'Telefono no valido.';
               }
               return null;
             },
@@ -678,7 +678,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                 return 'Ingresa el celular del rector.';
               }
               if (value.length < 10) {
-                return 'Celular no válido.';
+                return 'Celular no valido.';
               }
               return null;
             },
@@ -689,7 +689,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             keyboardType: TextInputType.emailAddress,
             enabled: !_isSocialRegistration,
             decoration: InputDecoration(
-              labelText: 'Correo Electrónico *',
+              labelText: 'Correo Electronico *',
               prefixIcon: const Icon(Icons.email_outlined),
               hintText: 'Ej: rector@colegio.edu.co',
               helperText:
@@ -704,7 +704,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
                 return 'Ingresa el correo.';
               }
               if (!value.contains('@') || !value.contains('.')) {
-                return 'Correo no válido.';
+                return 'Correo no valido.';
               }
               return null;
             },
@@ -723,7 +723,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
           icon: Icons.folder_open_rounded,
           title: 'Documentos Requeridos',
           subtitle: _institutionType == InstitutionType.public
-              ? 'Para instituciones públicas'
+              ? 'Para instituciones publicas'
               : 'Para instituciones privadas',
         ),
         const SizedBox(height: 8),
@@ -739,7 +739,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Formatos permitidos: PDF, JPG, PNG. Máximo 5 MB por archivo.',
+                  'Formatos permitidos: PDF, JPG, PNG. Maximo 5 MB por archivo.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -880,7 +880,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
             title: 'Datos del Administrador',
             subtitle: _isSocialRegistration
                 ? 'Usando tu cuenta de ${widget.socialUserData?.providerName ?? 'proveedor'}'
-                : 'Serás el administrador principal de SG-SST',
+                : 'Seras el administrador principal de SG-SST',
           ),
           if (_isSocialRegistration) ...[
             const SizedBox(height: 16),
@@ -894,7 +894,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               decoration: const InputDecoration(
                 labelText: 'Nombre completo *',
                 prefixIcon: Icon(Icons.person_outline),
-                hintText: 'Ej: Juan Pérez García',
+                hintText: 'Ej: Juan Perez Garcia',
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -929,7 +929,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               controller: _passwordController,
               obscureText: _isPasswordObscured,
               decoration: InputDecoration(
-                labelText: 'Contraseña *',
+                labelText: 'Contrasena *',
                 prefixIcon: const Icon(Icons.lock_outline),
                 suffixIcon: IconButton(
                   icon: Icon(
@@ -946,10 +946,10 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               ),
               validator: (value) {
                 if (value == null || value.isEmpty) {
-                  return 'Ingresa una contraseña.';
+                  return 'Ingresa una contrasena.';
                 }
                 if (value.length < 6) {
-                  return 'Mínimo 6 caracteres.';
+                  return 'Minimo 6 caracteres.';
                 }
                 return null;
               },
@@ -959,12 +959,12 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
               controller: _confirmPasswordController,
               obscureText: _isPasswordObscured,
               decoration: const InputDecoration(
-                labelText: 'Confirmar Contraseña *',
+                labelText: 'Confirmar Contrasena *',
                 prefixIcon: Icon(Icons.lock_outline),
               ),
               validator: (value) {
                 if (value != _passwordController.text) {
-                  return 'Las contraseñas no coinciden.';
+                  return 'Las contrasenas no coinciden.';
                 }
                 return null;
               },

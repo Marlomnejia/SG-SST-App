@@ -180,11 +180,11 @@ class _SuperAdminInstitutionsScreenState
                 child: filtered.isEmpty
                     ? _EmptyState(
                         title: _selectedFilter == null
-                            ? 'Aún no hay instituciones registradas'
+                            ? 'Aun no hay instituciones registradas'
                             : 'No hay instituciones para este filtro',
                         subtitle: _selectedFilter == null
-                            ? 'Cuando se registren instituciones aparecerán aquí para su revisión.'
-                            : 'Prueba con otro estado para revisar más instituciones.',
+                            ? 'Cuando se registren instituciones apareceran aqui para su revision.'
+                            : 'Prueba con otro estado para revisar mas instituciones.',
                         actionLabel: _selectedFilter != null
                             ? 'Mostrar todas'
                             : null,

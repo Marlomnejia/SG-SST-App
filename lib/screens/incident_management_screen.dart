@@ -31,7 +31,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
       final institutionId = await _eventService.getCurrentUserInstitutionId();
       if (institutionId == null) {
         setState(() {
-          _error = 'No se encontró la institución del usuario.';
+          _error = 'No se encontro la institucion del usuario.';
           _isLoading = false;
         });
         return;
@@ -54,7 +54,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Gestión de incidentes')),
+      appBar: AppBar(title: const Text('Gestion de incidentes')),
       body: _buildBody(scheme),
     );
   }
@@ -316,7 +316,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Prueba con otra vista para revisar más casos.',
+              'Prueba con otra vista para revisar mas casos.',
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
@@ -338,15 +338,15 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
     final tipo = (data['eventType'] ?? data['tipo'] ?? 'No especificado')
         .toString();
     final descripcion =
-        (data['descripcion'] ?? data['description'] ?? 'Sin descripción')
+        (data['descripcion'] ?? data['description'] ?? 'Sin descripcion')
             .toString();
     final reportadoPor =
-        (data['reportadoPor_email'] ?? data['createdByEmail'] ?? 'Anónimo')
+        (data['reportadoPor_email'] ?? data['createdByEmail'] ?? 'Anonimo')
             .toString();
     final estado = _normalizedStatus(data);
     final lugar = _resolveLugar(data);
     final categoria =
-        (data['reportType'] ?? data['categoria'] ?? 'Sin categoría').toString();
+        (data['reportType'] ?? data['categoria'] ?? 'Sin categoria').toString();
     final severidad = (data['severity'] ?? data['severidad'] ?? 'Sin severidad')
         .toString();
     final fechaFormateada = DateFormat(
@@ -550,7 +550,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
       case _IncidentFilter.open:
         return 'Abiertos';
       case _IncidentFilter.inReview:
-        return 'En revisión';
+        return 'En revision';
       case _IncidentFilter.inProgress:
         return 'En proceso';
       case _IncidentFilter.closed:
@@ -570,7 +570,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
       case _IncidentFilter.all:
         return '$visibleCount casos en total. $openCount abiertos y $closedCount cerrados o rechazados.';
       case _IncidentFilter.open:
-        return '$visibleCount casos abiertos, ordenados por fecha más reciente.';
+        return '$visibleCount casos abiertos, ordenados por fecha mas reciente.';
       default:
         return '$visibleCount casos en la vista actual.';
     }

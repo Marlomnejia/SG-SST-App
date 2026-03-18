@@ -730,9 +730,7 @@ class _SgSstReportGenerationScreenState
         pw.Text('Institucion: $institutionName'),
         pw.Text('Periodo: $periodText'),
         pw.Text('Generado por: $generatedBy'),
-        pw.Text(
-          'Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}',
-        ),
+        pw.Text('Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}'),
         pw.SizedBox(height: 8),
         pw.Divider(color: PdfColors.grey500, thickness: 0.8),
       ],
@@ -859,9 +857,7 @@ class _SgSstReportGenerationScreenState
         pw.Text(
           'Generado por: ${report.generatedByName} (${report.generatedByRole})',
         ),
-        pw.Text(
-          'Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}',
-        ),
+        pw.Text('Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}'),
         pw.SizedBox(height: 12),
         pw.Text('Revisado por: ______________________'),
         pw.SizedBox(height: 8),
@@ -3017,4 +3013,3 @@ class _EmptyStateCard extends StatelessWidget {
     );
   }
 }
-

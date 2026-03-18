@@ -1118,7 +1118,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
 
   String _greetingForHour(int hour) {
     if (hour < 12) {
-      return 'Buenos días';
+      return 'Buenos dias';
     }
     if (hour < 18) {
       return 'Buenas tardes';

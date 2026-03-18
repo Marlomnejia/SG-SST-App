@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../main.dart';
 
 /// Pantalla que se muestra cuando el usuario tiene email no verificado.
-/// Permite reenviar el correo de verificación y recargar el estado.
+/// Permite reenviar el correo de verificacion y recargar el estado.
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});
 
@@ -45,7 +45,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
 
     try {
       await _auth.currentUser?.sendEmailVerification();
-      _showMessage('Correo de verificación enviado.');
+      _showMessage('Correo de verificacion enviado.');
       _startCooldown();
     } on FirebaseAuthException catch (e) {
       _showMessage(_mapError(e.code));
@@ -85,12 +85,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
         // Cancelar timers antes de navegar
         _cooldownTimer?.cancel();
         _autoCheckTimer?.cancel();
-        
+
         if (showMessage && mounted) {
           _showMessage('¡Email verificado! Redirigiendo...');
         }
-        
-        // Forzar navegación al AuthWrapper
+
+        // Forzar navegacion al AuthWrapper
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const AuthWrapper()),
@@ -98,7 +98,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
           );
         }
       } else if (showMessage) {
-        _showMessage('Aún no has verificado tu email.');
+        _showMessage('Aun no has verificado tu email.');
       }
     } catch (e) {
       if (showMessage) {
@@ -131,9 +131,9 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -169,26 +169,26 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Título
+                // Titulo
                 Text(
-                  '¡Verifica tu correo electrónico!',
+                  '¡Verifica tu correo electronico!',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
 
-                // Descripción
+                // Descripcion
                 RichText(
                   textAlign: TextAlign.center,
                   text: TextSpan(
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                    ),
                     children: [
                       const TextSpan(
-                        text: 'Hemos enviado un correo de verificación a ',
+                        text: 'Hemos enviado un correo de verificacion a ',
                       ),
                       TextSpan(
                         text: _userEmail,
@@ -238,7 +238,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Botón Recargar
+                // Boton Recargar
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -254,12 +254,12 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                             ),
                           )
                         : const Icon(Icons.refresh),
-                    label: const Text('Ya verifiqué mi correo'),
+                    label: const Text('Ya verifique mi correo'),
                   ),
                 ),
                 const SizedBox(height: 12),
 
-                // Botón Reenviar
+                // Boton Reenviar
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -270,7 +270,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                     icon: const Icon(Icons.email_outlined),
                     label: Text(
                       _canResend
-                          ? 'Reenviar correo de verificación'
+                          ? 'Reenviar correo de verificacion'
                           : 'Reenviar en $_resendCooldown s',
                     ),
                   ),
@@ -293,7 +293,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Botón Cerrar Sesión
+                // Boton Cerrar Sesion
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -301,7 +301,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                     onPressed: _isLoading ? null : _signOut,
                     icon: Icon(Icons.logout, color: scheme.error),
                     label: Text(
-                      'Cerrar sesión',
+                      'Cerrar sesion',
                       style: TextStyle(color: scheme.error),
                     ),
                   ),

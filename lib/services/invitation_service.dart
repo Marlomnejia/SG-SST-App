@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/invitation.dart';
 
-/// Excepciones específicas del servicio de invitaciones
+/// Excepciones especificas del servicio de invitaciones
 class InvitationException implements Exception {
   final String code;
   final String message;
@@ -19,7 +19,7 @@ class InvitationService {
   CollectionReference<Map<String, dynamic>> get _invitationsRef =>
       _firestore.collection('invitations');
 
-  /// Crea una nueva invitación para un empleado
+  /// Crea una nueva invitacion para un empleado
   Future<Invitation> createInvitation({
     required String email,
     required String institutionId,
@@ -29,7 +29,7 @@ class InvitationService {
   }) async {
     final normalizedEmail = email.toLowerCase().trim();
 
-    // Verificar si ya existe una invitación pendiente para este email
+    // Verificar si ya existe una invitacion pendiente para este email
     final existing = await _invitationsRef
         .where('email', isEqualTo: normalizedEmail)
         .where('institutionId', isEqualTo: institutionId)
@@ -40,7 +40,7 @@ class InvitationService {
     if (existing.docs.isNotEmpty) {
       throw InvitationException(
         code: 'invitation-exists',
-        message: 'Ya existe una invitación pendiente para este correo.',
+        message: 'Ya existe una invitacion pendiente para este correo.',
       );
     }
 
@@ -60,7 +60,7 @@ class InvitationService {
     return invitation.copyWith(id: docRef.id);
   }
 
-  /// Busca una invitación pendiente por email
+  /// Busca una invitacion pendiente por email
   Future<Invitation?> findPendingInvitationByEmail(String email) async {
     final normalizedEmail = email.toLowerCase().trim();
 
@@ -78,7 +78,7 @@ class InvitationService {
     return Invitation.fromFirestore(querySnapshot.docs.first);
   }
 
-  /// Marca una invitación como aceptada
+  /// Marca una invitacion como aceptada
   Future<void> acceptInvitation(String invitationId) async {
     await _invitationsRef.doc(invitationId).update({
       'status': 'accepted',
@@ -86,30 +86,32 @@ class InvitationService {
     });
   }
 
-  /// Cancela una invitación
+  /// Cancela una invitacion
   Future<void> cancelInvitation(String invitationId) async {
-    await _invitationsRef.doc(invitationId).update({
-      'status': 'cancelled',
-    });
+    await _invitationsRef.doc(invitationId).update({'status': 'cancelled'});
   }
 
-  /// Elimina una invitación
+  /// Elimina una invitacion
   Future<void> deleteInvitation(String invitationId) async {
     await _invitationsRef.doc(invitationId).delete();
   }
 
-  /// Obtiene todas las invitaciones de una institución
+  /// Obtiene todas las invitaciones de una institucion
   Stream<List<Invitation>> getInstitutionInvitationsStream(
-      String institutionId) {
+    String institutionId,
+  ) {
     return _invitationsRef
         .where('institutionId', isEqualTo: institutionId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Invitation.fromFirestore(doc)).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Invitation.fromFirestore(doc))
+              .toList(),
+        );
   }
 
-  /// Obtiene invitaciones pendientes de una institución
+  /// Obtiene invitaciones pendientes de una institucion
   Future<List<Invitation>> getPendingInvitations(String institutionId) async {
     final querySnapshot = await _invitationsRef
         .where('institutionId', isEqualTo: institutionId)

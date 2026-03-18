@@ -120,7 +120,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
   String _friendlyStatus(String raw) {
     switch (_normalizeStatus(raw)) {
       case 'en_revision':
-        return 'En revisión';
+        return 'En revision';
       case 'en_proceso':
         return 'En proceso';
       case 'cerrado':
@@ -200,7 +200,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
             return '$label · $when';
           }
           if (label.isNotEmpty) {
-            return 'Último estado: $label';
+            return 'Ultimo estado: $label';
           }
         }
       }
@@ -358,7 +358,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Aún no has enviado reportes.',
+                  'Aun no has enviado reportes.',
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
               ],
@@ -376,7 +376,7 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
             final data = report.data();
             final tipo = (data['eventType'] ?? data['tipo'] ?? 'Incidente')
                 .toString();
-            final descripcion = (data['descripcion'] ?? 'Sin descripción')
+            final descripcion = (data['descripcion'] ?? 'Sin descripcion')
                 .toString();
             final estado = (data['estado'] ?? 'Desconocido').toString();
             final caseNumber = (data['caseNumber'] ?? '').toString();

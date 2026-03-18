@@ -209,7 +209,7 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
             iconSize: 72,
             title: 'No hay documentos disponibles',
             subtitle:
-                'Tu institución aún no ha publicado normativa SST y no hay documentos generales visibles.',
+                'Tu institucion aun no ha publicado normativa SST y no hay documentos generales visibles.',
             actionLabel: _canPublishDocument
                 ? 'Publicar primer documento'
                 : null,
@@ -299,7 +299,7 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
                             : Icons.school_outlined,
                         label: entry.isGlobal
                             ? 'Normativa general'
-                            : 'Mi institución',
+                            : 'Mi institucion',
                         background: accent.withValues(alpha: 0.1),
                         foreground: accent,
                       ),

@@ -59,7 +59,7 @@ class SocialUserData {
   }
 }
 
-/// Mantener compatibilidad con código existente
+/// Mantener compatibilidad con codigo existente
 typedef GoogleUserData = SocialUserData;
 
 class SocialOnboardingScreen extends StatefulWidget {
@@ -93,7 +93,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
     super.dispose();
   }
 
-  /// Busca automáticamente una invitación pendiente para el email del usuario
+  /// Busca automaticamente una invitacion pendiente para el email del usuario
   Future<void> _checkForInvitation() async {
     setState(() {
       _isLoading = true;
@@ -111,7 +111,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Error al buscar invitación: $e';
+        _errorMessage = 'Error al buscar invitacion: $e';
         _isLoading = false;
       });
     }
@@ -131,7 +131,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
 
       if (mounted) {
         _showSuccessAndNavigate(
-          '¡Bienvenido a ${_foundInvitation!.institutionName ?? "la institución"}!',
+          '¡Bienvenido a ${_foundInvitation!.institutionName ?? "la institucion"}!',
           'Tu cuenta de ${widget.socialData.providerName} ha sido vinculada correctamente.',
         );
       }
@@ -174,8 +174,8 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         actions: [
           FilledButton(
             onPressed: () {
-              Navigator.pop(context); // Cerrar diálogo
-              Navigator.pop(context, true); // Volver al login con éxito
+              Navigator.pop(context); // Cerrar dialogo
+              Navigator.pop(context, true); // Volver al login con exito
             },
             child: const Text('Continuar'),
           ),
@@ -242,7 +242,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
           const CircularProgressIndicator(),
           const SizedBox(height: 24),
           Text(
-            'Buscando invitación...',
+            'Buscando invitacion...',
             style: Theme.of(
               context,
             ).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
@@ -264,7 +264,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
     return Column(
       children: [
         Text(
-          '¡Tienes una invitación pendiente!',
+          '¡Tienes una invitacion pendiente!',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
@@ -272,7 +272,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         ),
         const SizedBox(height: 24),
 
-        // Tarjeta de invitación encontrada
+        // Tarjeta de invitacion encontrada
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -285,7 +285,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
               const Icon(Icons.verified, color: Colors.green, size: 48),
               const SizedBox(height: 12),
               Text(
-                _foundInvitation!.institutionName ?? 'Institución',
+                _foundInvitation!.institutionName ?? 'Institucion',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -316,7 +316,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         ),
         const SizedBox(height: 24),
 
-        // Botón de unirse
+        // Boton de unirse
         SizedBox(
           width: double.infinity,
           height: 48,
@@ -334,7 +334,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
                       color: Colors.white,
                     ),
                   )
-                : const Text('Unirme a esta institución'),
+                : const Text('Unirme a esta institucion'),
           ),
         ),
       ],
@@ -377,30 +377,30 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
         const SizedBox(height: 32),
 
         Text(
-          '¿Qué deseas hacer?',
+          '¿Que deseas hacer?',
           style: Theme.of(
             context,
           ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 16),
 
-        // Opción: Registrar nueva institución
+        // Opcion: Registrar nueva institucion
         _buildOptionCard(
           scheme: scheme,
           icon: Icons.add_business_rounded,
           iconColor: scheme.tertiary,
-          title: 'Registrar nueva institución',
+          title: 'Registrar nueva institucion',
           subtitle: 'Soy el administrador de SG-SST de mi empresa',
           onTap: _navigateToRegisterInstitution,
         ),
         const SizedBox(height: 12),
 
-        // Opción: Cerrar sesión
+        // Opcion: Cerrar sesion
         _buildOptionCard(
           scheme: scheme,
           icon: Icons.logout,
           iconColor: scheme.error,
-          title: 'Cerrar sesión',
+          title: 'Cerrar sesion',
           subtitle: 'Volver a intentar con otra cuenta',
           onTap: _cancelAndSignOut,
         ),
@@ -419,7 +419,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Si tu administrador te ha invitado, asegúrate de usar el mismo correo electrónico.',
+                  'Si tu administrador te ha invitado, asegurate de usar el mismo correo electronico.',
                   style: TextStyle(fontSize: 13, color: scheme.onSurface),
                 ),
               ),

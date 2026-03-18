@@ -49,7 +49,7 @@ class EventService {
       case 'reportado':
         return 'Reportado';
       case 'en_revision':
-        return 'En revisión';
+        return 'En revision';
       case 'en_proceso':
         return 'En proceso';
       case 'cerrado':
@@ -62,7 +62,7 @@ class EventService {
     }
   }
 
-  /// Obtiene el stream de eventos filtrados por institución
+  /// Obtiene el stream de eventos filtrados por institucion
   /// Requerido para cumplir con las reglas de seguridad de Firestore
   Stream<QuerySnapshot> getEventsStream(String institutionId) {
     return _firestore
@@ -72,7 +72,7 @@ class EventService {
         .snapshots();
   }
 
-  /// Obtiene eventos de una institución (Future)
+  /// Obtiene eventos de una institucion (Future)
   Future<QuerySnapshot> getEvents(String institutionId) {
     return _firestore
         .collection('eventos')
@@ -138,7 +138,7 @@ class EventService {
         currentUser.uid,
       );
       if (institutionId == null) {
-        throw Exception('El usuario no pertenece a ninguna institución.');
+        throw Exception('El usuario no pertenece a ninguna institucion.');
       }
 
       // Step 1: Create the document with institutionId for security rules
@@ -219,7 +219,7 @@ class EventService {
       currentUser.uid,
     );
     if (institutionId == null) {
-      throw Exception('El usuario no pertenece a ninguna institución.');
+      throw Exception('El usuario no pertenece a ninguna institucion.');
     }
 
     final reportRef = _firestore.collection('reports').doc();
@@ -513,11 +513,9 @@ class EventService {
   }) {
     switch (reportType) {
       case 'Accidente con lesion':
-      case 'Accidente con lesión':
       case 'Emergencia / evento grave':
         return 'Accidente';
       case 'Condicion insegura':
-      case 'Condición insegura':
       case 'Acto inseguro':
       case 'Incidente (casi accidente)':
       case 'Riesgo psicosocial':
