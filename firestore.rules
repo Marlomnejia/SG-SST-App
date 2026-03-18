@@ -61,7 +61,27 @@ service cloud.firestore {
       allow create: if isAuthenticated();
       
       // Actualizar: solo admin de la instituciÃ³n o super admin
-      allow update: if isInstitutionAdmin(institutionId) || isSuperAdmin();
+      allow update: if isSuperAdmin() || (
+        isInstitutionAdmin(institutionId) &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.isActive == resource.data.isActive &&
+        request.resource.data.rejectionReason == resource.data.rejectionReason &&
+        request.resource.data.suspensionReason == resource.data.suspensionReason &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'nit',
+          'department',
+          'city',
+          'address',
+          'type',
+          'institutionPhone',
+          'rectorCellPhone',
+          'email',
+          'documentsUrls',
+          'inviteCode',
+          'updatedAt'
+        ])
+      );
       
       // Eliminar: solo super admin
       allow delete: if isSuperAdmin();
@@ -77,13 +97,44 @@ service cloud.firestore {
       );
       
       // Crear: usuario autenticado creando su propio perfil
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() && request.auth.uid == userId && (
+        request.resource.data.role in ['user', 'employee'] ||
+        (
+          request.resource.data.role == 'admin_sst' &&
+          request.resource.data.institutionId is string &&
+          exists(/databases/$(database)/documents/institutions/$(request.resource.data.institutionId)) &&
+          get(/databases/$(database)/documents/institutions/$(request.resource.data.institutionId)).data.email == request.resource.data.email
+        )
+      );
       
       // Actualizar: el propio usuario o admins
       allow update: if isAuthenticated() && (
-        request.auth.uid == userId ||
         isSuperAdmin() ||
-        (isAdminSst() && resource.data.institutionId == getUserData().institutionId)
+        (
+          request.auth.uid == userId &&
+          request.resource.data.role == resource.data.role &&
+          (
+            request.resource.data.institutionId == resource.data.institutionId ||
+            (
+              resource.data.institutionId == null &&
+              request.resource.data.institutionId is string &&
+              exists(/databases/$(database)/documents/institutions/$(request.resource.data.institutionId)) &&
+              isInstitutionActive(request.resource.data.institutionId)
+            )
+          ) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'displayName',
+            'photoUrl',
+            'jobTitle',
+            'campus',
+            'phone',
+            'notificationsEnabled',
+            'fcmTokens',
+            'updatedAt',
+            'email',
+            'institutionId'
+          ])
+        )
       );
       
       // Eliminar: solo super admin
@@ -270,6 +321,65 @@ service cloud.firestore {
           (isAdminSst() && getUserData().institutionId == institutionId)
         );
       }
+    }
+
+    // Modulo de inspecciones por institucion
+    match /institutions/{institutionId}/inspections/{inspectionId} {
+      allow read: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (isAdminSst() && getUserData().institutionId == institutionId) ||
+        (
+          getUserData().institutionId == institutionId &&
+          resource.data.assignedToUid == request.auth.uid
+        )
+      );
+
+      allow create: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (
+          isAdminSst() &&
+          getUserData().institutionId == institutionId &&
+          isInstitutionActive(institutionId)
+        )
+      );
+
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (
+          isAdminSst() &&
+          getUserData().institutionId == institutionId &&
+          isInstitutionActive(institutionId)
+        ) ||
+        (
+          getUserData().institutionId == institutionId &&
+          request.auth.uid == resource.data.assignedToUid &&
+          resource.data.status != 'cancelled' &&
+          resource.data.status != 'completed' &&
+          resource.data.status != 'completed_with_findings' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'updatedAt',
+            'completedAt',
+            'completion',
+            'result',
+            'statusHistory'
+          ]) &&
+          request.resource.data.status in [
+            'in_progress',
+            'completed',
+            'completed_with_findings'
+          ]
+        )
+      );
+
+      allow delete: if isAuthenticated() && (
+        isSuperAdmin() ||
+        (
+          isAdminSst() &&
+          getUserData().institutionId == institutionId &&
+          isInstitutionActive(institutionId)
+        )
+      );
     }
 
     // Documentos globales SST (gestion exclusiva del super admin)

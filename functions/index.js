@@ -6,6 +6,7 @@ const {
   onDocumentCreated,
   onDocumentUpdated,
 } = require("firebase-functions/v2/firestore");
+const { user } = require("firebase-functions/v1/auth");
 
 admin.initializeApp();
 
@@ -20,17 +21,17 @@ function addMonths(date, months) {
 }
 
 async function collectTokens(querySnapshot) {
-  const tokens = [];
+  const uniqueTokens = new Set();
   querySnapshot.forEach((doc) => {
     const data = doc.data() || {};
     const list = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
     for (const token of list) {
-      if (token && !tokens.includes(token)) {
-        tokens.push(token);
+      if (token) {
+        uniqueTokens.add(token);
       }
     }
   });
-  return tokens;
+  return [...uniqueTokens];
 }
 
 async function sendNotification(tokens, payload) {
@@ -55,18 +56,53 @@ async function sendNotification(tokens, payload) {
   return null;
 }
 
-async function collectInstitutionUserTokens(institutionId) {
+async function collectInstitutionUserTokens(
+  institutionId,
+  {
+    allowedRoles = ["user", "employee"],
+    includeDisabled = false,
+  } = {}
+) {
   if (!institutionId) return [];
+
+  // Evita depender de queries compuestas con indice (role + notificationsEnabled)
+  // y tolera perfiles antiguos sin notificationsEnabled.
   const usersSnapshot = await admin
     .firestore()
     .collection("users")
     .where("institutionId", "==", institutionId)
-    .where("notificationsEnabled", "==", true)
-    .where("role", "in", ["user", "employee"])
     .get();
-  const tokens = await collectTokens(usersSnapshot);
+
+  const normalizedRoles = new Set(
+    (allowedRoles || []).map((role) => String(role || "").trim())
+  );
+  const uniqueTokens = new Set();
+  let matchedRoles = 0;
+  let enabledUsers = 0;
+
+  usersSnapshot.forEach((doc) => {
+    const data = doc.data() || {};
+    const role = String(data.role || "").trim();
+    if (normalizedRoles.size > 0 && !normalizedRoles.has(role)) {
+      return;
+    }
+    matchedRoles += 1;
+
+    const notificationsEnabled = data.notificationsEnabled !== false;
+    if (!includeDisabled && !notificationsEnabled) {
+      return;
+    }
+    enabledUsers += 1;
+
+    const list = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
+    for (const token of list) {
+      if (token) uniqueTokens.add(token);
+    }
+  });
+
+  const tokens = [...uniqueTokens];
   console.log(
-    `[FCM] institutionId=${institutionId} users=${usersSnapshot.size} tokens=${tokens.length}`
+    `[FCM] institutionId=${institutionId} usersTotal=${usersSnapshot.size} usersByRole=${matchedRoles} usersEnabled=${enabledUsers} tokens=${tokens.length}`
   );
   return tokens;
 }
@@ -90,6 +126,93 @@ async function collectUserTokensByUid(uid) {
   });
   console.log(`[FCM] uid=${uid} tokens_directos=${tokens.length}`);
   return tokens;
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+async function queueEmail(to, subject, text, html, metadata = {}) {
+  const normalizedTo = normalizeEmail(to);
+  if (!normalizedTo) {
+    return null;
+  }
+
+  // Compatible con la extension "Trigger Email" (firestore-send-email)
+  return admin.firestore().collection("mail").add({
+    to: [normalizedTo],
+    message: {
+      subject,
+      text,
+      html,
+    },
+    metadata: {
+      source: "sg-sst-functions",
+      ...metadata,
+    },
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function collectInstitutionAdminEmails(institutionId) {
+  if (!institutionId) return [];
+  const usersSnap = await admin
+    .firestore()
+    .collection("users")
+    .where("institutionId", "==", institutionId)
+    .where("role", "==", "admin_sst")
+    .get();
+
+  const emails = new Set();
+  usersSnap.forEach((doc) => {
+    const data = doc.data() || {};
+    const email = normalizeEmail(data.email);
+    if (email) emails.add(email);
+  });
+  return [...emails];
+}
+
+async function queueInstitutionEmails({
+  institutionId,
+  institutionName,
+  subject,
+  text,
+  html,
+  extraEmails = [],
+  reason = "",
+}) {
+  const recipients = new Set();
+  for (const email of extraEmails) {
+    const normalized = normalizeEmail(email);
+    if (normalized) recipients.add(normalized);
+  }
+
+  const adminEmails = await collectInstitutionAdminEmails(institutionId);
+  for (const email of adminEmails) {
+    recipients.add(email);
+  }
+
+  if (!recipients.size) {
+    console.log(
+      `[MAIL][institution] institutionId=${institutionId} sin destinatarios (${reason}).`
+    );
+    return null;
+  }
+
+  await Promise.all(
+    [...recipients].map((email) =>
+      queueEmail(email, subject, text, html, {
+        institutionId: String(institutionId || ""),
+        institutionName: String(institutionName || ""),
+        reason,
+      })
+    )
+  );
+
+  console.log(
+    `[MAIL][institution] institutionId=${institutionId} reason=${reason} queued=${recipients.size}`
+  );
+  return null;
 }
 
 function shouldSendReminder(startAtMs, nowMs, targetHours, windowMinutes = 15) {
@@ -256,6 +379,95 @@ exports.notifyNewEvent = onDocumentCreated("eventos/{eventId}", async (event) =>
     },
   });
 });
+
+exports.queueInstitutionPendingEmail = onDocumentCreated(
+  "institutions/{institutionId}",
+  async (event) => {
+    const data = event.data ? event.data.data() : {};
+    const status = String(data.status || "pending").trim().toLowerCase();
+    if (status !== "pending") {
+      return null;
+    }
+
+    const institutionId = event.params.institutionId;
+    const institutionName = String(data.name || "tu institucion").trim();
+    const contactEmail = normalizeEmail(data.email);
+    const inviteCode = String(data.inviteCode || "").trim();
+
+    const subject = "Registro recibido - Validacion de institucion SG-SST";
+    const text =
+      `Hola.\n\n` +
+      `Recibimos el registro de la institucion "${institutionName}". ` +
+      `Tu solicitud esta en estado PENDIENTE de validacion por Super Admin.\n\n` +
+      (inviteCode
+        ? `Codigo de invitacion (se habilita al aprobar): ${inviteCode}\n\n`
+        : "") +
+      `Te notificaremos por este medio cuando sea aprobada.\n\n` +
+      `EduSST`;
+    const html =
+      `<p>Hola.</p>` +
+      `<p>Recibimos el registro de la institucion <b>${institutionName}</b>. ` +
+      `Tu solicitud esta en estado <b>PENDIENTE</b> de validacion por Super Admin.</p>` +
+      (inviteCode
+        ? `<p>Codigo de invitacion (se habilita al aprobar): <b>${inviteCode}</b></p>`
+        : "") +
+      `<p>Te notificaremos por este medio cuando sea aprobada.</p>` +
+      `<p><b>EduSST</b></p>`;
+
+    return queueInstitutionEmails({
+      institutionId,
+      institutionName,
+      subject,
+      text,
+      html,
+      extraEmails: contactEmail ? [contactEmail] : [],
+      reason: "institution_pending",
+    });
+  }
+);
+
+exports.queueInstitutionApprovedEmail = onDocumentUpdated(
+  "institutions/{institutionId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const beforeStatus = String(before.status || "").trim().toLowerCase();
+    const afterStatus = String(after.status || "").trim().toLowerCase();
+
+    if (beforeStatus === afterStatus || afterStatus !== "active") {
+      return null;
+    }
+
+    const institutionId = event.params.institutionId;
+    const institutionName = String(after.name || "tu institucion").trim();
+    const contactEmail = normalizeEmail(after.email);
+    const inviteCode = String(after.inviteCode || "").trim();
+
+    const subject = "Institucion aprobada - SG-SST activo";
+    const text =
+      `Hola.\n\n` +
+      `La institucion "${institutionName}" fue APROBADA y ya se encuentra activa en EduSST.\n\n` +
+      (inviteCode ? `Codigo de invitacion: ${inviteCode}\n\n` : "") +
+      `Ya puedes ingresar y gestionar los modulos del sistema.\n\n` +
+      `EduSST`;
+    const html =
+      `<p>Hola.</p>` +
+      `<p>La institucion <b>${institutionName}</b> fue <b>APROBADA</b> y ya se encuentra activa en EduSST.</p>` +
+      (inviteCode ? `<p>Codigo de invitacion: <b>${inviteCode}</b></p>` : "") +
+      `<p>Ya puedes ingresar y gestionar los modulos del sistema.</p>` +
+      `<p><b>EduSST</b></p>`;
+
+    return queueInstitutionEmails({
+      institutionId,
+      institutionName,
+      subject,
+      text,
+      html,
+      extraEmails: contactEmail ? [contactEmail] : [],
+      reason: "institution_approved",
+    });
+  }
+);
 
 exports.notifyTrainingReminders = onSchedule("every 15 minutes", async () => {
   const nowMs = Date.now();
@@ -527,3 +739,21 @@ exports.notifyActionPlanStatusUpdates = onDocumentUpdated(
     return sendNotification(tokens, payload);
   }
 );
+
+exports.cleanupDeletedAuthUserProfile = user().onDelete(async (deletedUser) => {
+  const uid = deletedUser && deletedUser.uid ? deletedUser.uid : null;
+  if (!uid) {
+    console.log("[AUTH_CLEANUP] Evento sin uid, se omite.");
+    return null;
+  }
+
+  try {
+    await admin.firestore().collection("users").doc(uid).delete();
+    console.log(`[AUTH_CLEANUP] Perfil users/${uid} eliminado.`);
+  } catch (e) {
+    console.error(`[AUTH_CLEANUP] Error eliminando users/${uid}:`, e);
+    throw e;
+  }
+
+  return null;
+});

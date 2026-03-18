@@ -225,11 +225,55 @@ class _LoginScreenState extends State<LoginScreen> {
     }
     // user, employee u otros roles van al dashboard de usuario
     {
+      final institutionId = await _userService.getUserInstitutionId(user.uid);
+      if (!mounted) {
+        return;
+      }
+      if (institutionId == null || institutionId.trim().isEmpty) {
+        final socialProvider = _resolveSocialProvider(user);
+        if (socialProvider != null) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => SocialOnboardingScreen(
+                socialData: SocialUserData(
+                  user: user,
+                  displayName: user.displayName ?? '',
+                  email: user.email ?? '',
+                  photoUrl: user.photoURL,
+                  provider: socialProvider,
+                ),
+              ),
+            ),
+          );
+          return;
+        }
+        await _authService.signOut();
+        if (!mounted) {
+          return;
+        }
+        _showMessage(
+          'Tu cuenta aun no esta vinculada a una institucion. Completa el registro para continuar.',
+        );
+        return;
+      }
       // user, employee u otros roles van al dashboard de usuario
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const UserDashboardScreen()),
       );
     }
+  }
+
+  SocialAuthProvider? _resolveSocialProvider(User user) {
+    final providerIds = user.providerData
+        .map((provider) => provider.providerId)
+        .toSet();
+    if (providerIds.contains('google.com')) {
+      return SocialAuthProvider.google;
+    }
+    if (providerIds.contains('microsoft.com')) {
+      return SocialAuthProvider.microsoft;
+    }
+    return null;
   }
 
   String _mapAuthError(String code) {

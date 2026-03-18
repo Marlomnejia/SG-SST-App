@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -204,13 +205,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
   final UserService _userService = UserService();
   final InstitutionService _institutionService = InstitutionService();
   late final Stream<User?> _authStateStream;
+  final Set<String> _profileBootstrapInProgress = <String>{};
 
-  String? _cachedRoleUid;
-  Future<String?>? _cachedRoleFuture;
-  String? _lastResolvedRole;
-  String? _cachedInstitutionUid;
-  Future<String?>? _cachedInstitutionFuture;
-  String? _lastResolvedInstitutionId;
   String? _cachedInstitutionStreamId;
   Stream<Institution?>? _cachedInstitutionStream;
 
@@ -220,22 +216,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _authStateStream = FirebaseAuth.instance
         .authStateChanges()
         .asBroadcastStream();
-  }
-
-  Future<String?> _roleFutureFor(String uid) {
-    if (_cachedRoleUid != uid || _cachedRoleFuture == null) {
-      _cachedRoleUid = uid;
-      _cachedRoleFuture = _userService.getUserRole(uid);
-    }
-    return _cachedRoleFuture!;
-  }
-
-  Future<String?> _institutionFutureFor(String uid) {
-    if (_cachedInstitutionUid != uid || _cachedInstitutionFuture == null) {
-      _cachedInstitutionUid = uid;
-      _cachedInstitutionFuture = _userService.getUserInstitutionId(uid);
-    }
-    return _cachedInstitutionFuture!;
   }
 
   Stream<Institution?> _institutionStreamFor(String institutionId) {
@@ -250,14 +230,48 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   void _resetAuthWrapperCaches() {
-    _cachedRoleUid = null;
-    _cachedRoleFuture = null;
-    _lastResolvedRole = null;
-    _cachedInstitutionUid = null;
-    _cachedInstitutionFuture = null;
-    _lastResolvedInstitutionId = null;
     _cachedInstitutionStreamId = null;
     _cachedInstitutionStream = null;
+    _profileBootstrapInProgress.clear();
+  }
+
+  Future<String> _resolveInitialRole(User user) async {
+    const allowedRoles = <String>{'admin', 'admin_sst', 'user', 'employee'};
+    try {
+      final tokenResult = await user.getIdTokenResult();
+      final claimRole = (tokenResult.claims?['role'] ?? '').toString().trim();
+      if (allowedRoles.contains(claimRole)) {
+        return claimRole;
+      }
+    } catch (_) {}
+    return 'user';
+  }
+
+  Future<void> _ensureUserProfileDocument(User user) async {
+    if (_profileBootstrapInProgress.contains(user.uid)) return;
+    _profileBootstrapInProgress.add(user.uid);
+    try {
+      final existing = await _userService.getUserData(user.uid);
+      if (existing == null) {
+        final role = await _resolveInitialRole(user);
+        await _userService.createUserProfile(user, role: role);
+        return;
+      }
+
+      final role = (existing['role'] ?? '').toString().trim();
+      if (role.isEmpty) {
+        final resolvedRole = await _resolveInitialRole(user);
+        await _userService.updateUserProfile(user.uid, {'role': resolvedRole});
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+          '[AuthWrapper] No se pudo sincronizar users/${user.uid}: $e',
+        );
+      }
+    } finally {
+      _profileBootstrapInProgress.remove(user.uid);
+    }
   }
 
   @override
@@ -283,71 +297,79 @@ class _AuthWrapperState extends State<AuthWrapper> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _ensureNotificationRegistration(user);
           });
-          return FutureBuilder<String?>(
-            initialData: _lastResolvedRole,
-            future: _roleFutureFor(user.uid),
-            builder: (context, roleSnapshot) {
-              if (roleSnapshot.connectionState == ConnectionState.waiting &&
-                  !roleSnapshot.hasData) {
+          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: _userService.streamUserProfile(user.uid),
+            builder: (context, userSnap) {
+              if (userSnap.connectionState == ConnectionState.waiting &&
+                  !userSnap.hasData) {
                 return const Scaffold(
                   body: Center(child: CircularProgressIndicator()),
                 );
               }
-              final role = roleSnapshot.data;
-              if (role != null && role.trim().isNotEmpty) {
-                _lastResolvedRole = role;
+              final userDoc = userSnap.data;
+              if (userDoc == null || !userDoc.exists) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _ensureUserProfileDocument(user);
+                });
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final userData = userDoc.data() ?? const <String, dynamic>{};
+              final role = (userData['role'] ?? '').toString().trim();
+              if (role.isEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _ensureUserProfileDocument(user);
+                });
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
               }
               if (role == 'admin') {
                 return const SuperAdminDashboardScreen();
               }
               if (role == 'admin_sst') {
-                return FutureBuilder<String?>(
-                  initialData: _lastResolvedInstitutionId,
-                  future: _institutionFutureFor(user.uid),
-                  builder: (context, instIdSnap) {
-                    if (instIdSnap.connectionState == ConnectionState.waiting &&
-                        !instIdSnap.hasData) {
+                final institutionId = (userData['institutionId'] ?? '')
+                    .toString()
+                    .trim();
+                if (institutionId.isEmpty) {
+                  // Evita cerrar sesión automáticamente durante flujos de
+                  // bootstrap/registro para no invalidar operaciones en curso
+                  // (ej. carga de documentos en Storage).
+                  return const LoginScreen();
+                }
+                return StreamBuilder<Institution?>(
+                  stream: _institutionStreamFor(institutionId),
+                  builder: (context, instSnap) {
+                    if (instSnap.connectionState == ConnectionState.waiting &&
+                        !instSnap.hasData) {
                       return const Scaffold(
                         body: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    final institutionId = (instIdSnap.data ?? '').trim();
-                    if (institutionId.isNotEmpty) {
-                      _lastResolvedInstitutionId = institutionId;
+                    final institution = instSnap.data;
+                    if (institution == null) {
+                      return VerificationPendingScreen();
                     }
-                    if (institutionId.isEmpty) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        FirebaseAuth.instance.signOut();
-                      });
-                      return const LoginScreen();
+                    if (institution.status == InstitutionStatus.pending) {
+                      return VerificationPendingScreen();
                     }
-                    return StreamBuilder<Institution?>(
-                      stream: _institutionStreamFor(institutionId),
-                      builder: (context, instSnap) {
-                        if (instSnap.connectionState ==
-                                ConnectionState.waiting &&
-                            !instSnap.hasData) {
-                          return const Scaffold(
-                            body: Center(child: CircularProgressIndicator()),
-                          );
-                        }
-                        final institution = instSnap.data;
-                        if (institution == null) {
-                          return VerificationPendingScreen();
-                        }
-                        if (institution.status == InstitutionStatus.pending) {
-                          return VerificationPendingScreen();
-                        }
-                        if (institution.status == InstitutionStatus.active) {
-                          return const AdminDashboardScreen();
-                        }
-                        return VerificationPendingScreen();
-                      },
-                    );
+                    if (institution.status == InstitutionStatus.active) {
+                      return const AdminDashboardScreen();
+                    }
+                    return VerificationPendingScreen();
                   },
                 );
               }
               if (role == 'user' || role == 'employee') {
+                final institutionId = (userData['institutionId'] ?? '')
+                    .toString()
+                    .trim();
+                if (institutionId.isEmpty) {
+                  // Evita cerrar sesión automáticamente durante flujos de
+                  // bootstrap/registro para no invalidar operaciones en curso.
+                  return const LoginScreen();
+                }
                 return const UserDashboardScreen();
               }
               return const LoginScreen();

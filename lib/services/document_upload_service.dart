@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import '../firebase_options.dart';
 
 /// Tipos de documentos para verificación de instituciones
 enum DocumentType {
@@ -56,7 +59,19 @@ class SelectedFile {
 
 /// Servicio para manejar carga de documentos a Firebase Storage
 class DocumentUploadService {
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instanceFor(
+    app: Firebase.app(),
+    bucket: _normalizedBucket,
+  );
+
+  static String get _normalizedBucket {
+    final raw = (DefaultFirebaseOptions.currentPlatform.storageBucket ?? '')
+        .trim();
+    if (raw.startsWith('gs://')) {
+      return raw;
+    }
+    return 'gs://$raw';
+  }
 
   /// Extensiones permitidas para documentos
   static const List<String> allowedExtensions = ['pdf', 'jpg', 'jpeg', 'png'];
@@ -110,6 +125,21 @@ class DocumentUploadService {
     required SelectedFile file,
     void Function(double progress)? onProgress,
   }) async {
+    final auth = FirebaseAuth.instance;
+    final currentUser = auth.currentUser;
+    final currentUid = currentUser?.uid;
+    if (currentUid == null || currentUid.isEmpty) {
+      throw DocumentUploadException(
+        code: 'unauthenticated',
+        message:
+            'No hay una sesion activa para subir documentos. Inicia sesion y vuelve a intentar.',
+      );
+    }
+
+    // Fuerza refresco de token para evitar rechazos transitorios al crear cuenta
+    // e inmediatamente intentar subir evidencias/documentos.
+    await currentUser!.getIdToken(true);
+
     if (!file.isValid) {
       throw DocumentUploadException(
         code: 'invalid-file',
@@ -117,64 +147,47 @@ class DocumentUploadService {
       );
     }
 
-    final fileName = '${documentType.fileName}.${file.extension}';
+    final extension = file.extension.trim().toLowerCase();
+    if (!allowedExtensions.contains(extension)) {
+      throw DocumentUploadException(
+        code: 'invalid-extension',
+        message:
+            'Formato no permitido (${file.extension}). Solo se aceptan PDF, JPG, JPEG o PNG.',
+      );
+    }
+
+    final fileName = '${documentType.fileName}.$extension';
     final storagePath = 'institutions/$nit/documents/$fileName';
     final ref = _storage.ref().child(storagePath);
 
     try {
-      UploadTask uploadTask;
-
-      if (file.bytes != null) {
-        // Web: usar bytes
-        uploadTask = ref.putData(
-          file.bytes!,
-          SettableMetadata(
-            contentType: _getContentType(file.extension),
-            customMetadata: {
-              'documentType': documentType.name,
-              'originalName': file.name,
-              'uploadedAt': DateTime.now().toIso8601String(),
-            },
-          ),
-        );
-      } else if (file.path != null) {
-        // Mobile: usar path
-        uploadTask = ref.putFile(
-          File(file.path!),
-          SettableMetadata(
-            contentType: _getContentType(file.extension),
-            customMetadata: {
-              'documentType': documentType.name,
-              'originalName': file.name,
-              'uploadedAt': DateTime.now().toIso8601String(),
-            },
-          ),
-        );
-      } else {
-        throw DocumentUploadException(
-          code: 'no-file-data',
-          message: 'No se pudo obtener los datos del archivo.',
-        );
-      }
-
-      // Escuchar progreso
-      if (onProgress != null) {
-        uploadTask.snapshotEvents.listen((snapshot) {
-          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-          onProgress(progress);
-        });
-      }
-
-      // Esperar a que termine
-      await uploadTask;
-
-      // Obtener URL de descarga
-      final downloadUrl = await ref.getDownloadURL();
-      return downloadUrl;
+      return await _executeUpload(
+        ref: ref,
+        file: file,
+        extension: extension,
+        documentType: documentType,
+        onProgress: onProgress,
+      );
     } on FirebaseException catch (e) {
+      // Reintento de una sola vez si la sesión/token todavía no se propagó.
+      if (e.code == 'unauthorized' || e.code == 'permission-denied') {
+        try {
+          await auth.currentUser?.getIdToken(true);
+          return await _executeUpload(
+            ref: ref,
+            file: file,
+            extension: extension,
+            documentType: documentType,
+            onProgress: onProgress,
+          );
+        } on FirebaseException catch (_) {
+          // continúa al throw detallado original.
+        }
+      }
       throw DocumentUploadException(
         code: 'upload-error',
-        message: 'Error al subir el documento: ${e.message}',
+        message:
+            'Error al subir el documento (${e.code}). bucket=${_storage.bucket}, ruta=$storagePath, uid=$currentUid. ${e.message ?? ''} Si tienes App Check forzado en Storage, desactiva enforcement en pruebas o configura App Check.',
       );
     }
   }
@@ -236,6 +249,47 @@ class DocumentUploadService {
       default:
         return 'application/octet-stream';
     }
+  }
+
+  Future<String> _executeUpload({
+    required Reference ref,
+    required SelectedFile file,
+    required String extension,
+    required DocumentType documentType,
+    void Function(double progress)? onProgress,
+  }) async {
+    UploadTask uploadTask;
+    final metadata = SettableMetadata(
+      contentType: _getContentType(extension),
+      customMetadata: {
+        'documentType': documentType.name,
+        'originalName': file.name,
+        'uploadedAt': DateTime.now().toIso8601String(),
+      },
+    );
+
+    if (file.bytes != null) {
+      uploadTask = ref.putData(file.bytes!, metadata);
+    } else if (file.path != null) {
+      uploadTask = ref.putFile(File(file.path!), metadata);
+    } else {
+      throw DocumentUploadException(
+        code: 'no-file-data',
+        message: 'No se pudo obtener los datos del archivo.',
+      );
+    }
+
+    if (onProgress != null) {
+      uploadTask.snapshotEvents.listen((snapshot) {
+        final total = snapshot.totalBytes;
+        if (total <= 0) return;
+        final progress = snapshot.bytesTransferred / total;
+        onProgress(progress);
+      });
+    }
+
+    await uploadTask;
+    return ref.getDownloadURL();
   }
 }
 

@@ -229,24 +229,15 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
                       : Icons.school_outlined,
                   label: _manageGlobal
                       ? 'Alcance global'
-                      : 'Gestión institucional',
+                      : 'Gestion institucional',
                   background: accent.withValues(alpha: 0.12),
                   foreground: accent,
                 ),
                 const SizedBox(height: 10),
                 Text(
                   _manageGlobal
-                      ? 'Biblioteca normativa global'
-                      : 'Biblioteca documental institucional',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _manageGlobal
-                      ? 'Administra la documentación base que verán todas las instituciones.'
-                      : 'Gestiona los documentos SST que consultarán los usuarios de tu institución.',
+                      ? 'Administra documentos base para todas las instituciones.'
+                      : 'Gestiona los documentos SST de tu institucion.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -278,27 +269,6 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
                       color: accent,
                     ),
                   ],
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(alpha: 0.52),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: accent.withValues(alpha: 0.18)),
-                  ),
-                  child: Text(
-                    _manageGlobal
-                        ? 'Aquí centralizas la normativa base y su disponibilidad para todas las instituciones.'
-                        : 'Aquí ordenas la biblioteca documental, el estado de publicación y la trazabilidad de lectura.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
                 ),
               ],
             ),
@@ -340,7 +310,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
         const SizedBox(width: 12),
         AppMetaChip(
           icon: Icons.schedule_outlined,
-          label: 'Más recientes primero',
+          label: 'MÃ¡s recientes primero',
           background: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
           foreground: scheme.onSurfaceVariant,
         ),
@@ -374,8 +344,8 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
           const SizedBox(height: 14),
           Text(
             _manageGlobal
-                ? 'Aún no hay documentos globales'
-                : 'Aún no hay documentos',
+                ? 'AÃºn no hay documentos globales'
+                : 'AÃºn no hay documentos',
             textAlign: TextAlign.center,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w700,
@@ -385,7 +355,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
           Text(
             _manageGlobal
                 ? 'Sube el primer documento base para todas las instituciones.'
-                : 'Sube el primer documento para tu institución.',
+                : 'Sube el primer documento para tu instituciÃ³n.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
@@ -477,7 +447,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
                         icon: _manageGlobal
                             ? Icons.public_outlined
                             : Icons.school_outlined,
-                        label: _manageGlobal ? 'General' : 'Mi institución',
+                        label: _manageGlobal ? 'General' : 'Mi instituciÃ³n',
                         background: accent.withValues(alpha: 0.1),
                         foreground: accent,
                       ),
@@ -771,7 +741,7 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Eliminar documento'),
-          content: Text('Se eliminara "${model.title}". ¿Deseas continuar?'),
+          content: Text('Se eliminara "${model.title}". Â¿Deseas continuar?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -948,15 +918,15 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
                         Text(
                           widget.manageGlobal
                               ? 'Documento base del sistema'
-                              : 'Documento para tu institución',
+                              : 'Documento para tu instituciÃ³n',
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           widget.manageGlobal
-                              ? 'Este archivo podrá ser consultado por usuarios de todas las instituciones cuando esté publicado.'
-                              : 'Este archivo se publicará solo para los usuarios asociados a tu institución.',
+                              ? 'Este archivo podrÃ¡ ser consultado por usuarios de todas las instituciones cuando estÃ© publicado.'
+                              : 'Este archivo se publicarÃ¡ solo para los usuarios asociados a tu instituciÃ³n.',
                           style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
@@ -1080,7 +1050,7 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
                     subtitle: Text(
                       widget.manageGlobal
                           ? 'Visible para todas las instituciones'
-                          : 'Visible para usuarios de la institución',
+                          : 'Visible para usuarios de la instituciÃ³n',
                     ),
                     value: _isPublished,
                     onChanged: _submitting

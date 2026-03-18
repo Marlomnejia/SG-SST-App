@@ -2,8 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../services/sst_document_service.dart';
-import '../services/training_service.dart';
 import '../services/user_service.dart';
 
 class InstitutionUserDetailScreen extends StatefulWidget {
@@ -26,8 +24,6 @@ class InstitutionUserDetailScreen extends StatefulWidget {
 class _InstitutionUserDetailScreenState
     extends State<InstitutionUserDetailScreen> {
   final UserService _userService = UserService();
-  final TrainingService _trainingService = TrainingService();
-  final SstDocumentService _documentService = SstDocumentService();
   final DateFormat _dateTimeFormat = DateFormat('dd/MM/yyyy HH:mm');
   late final Future<CurrentUserData?> _viewerFuture;
 
@@ -37,37 +33,9 @@ class _InstitutionUserDetailScreenState
     _viewerFuture = _userService.getCurrentUser();
   }
 
-  Future<_UserDetailMetrics> _loadMetrics(String institutionId) async {
-    final results = await Future.wait<dynamic>([
-      _userService.getUserReportCount(
-        widget.userId,
-        institutionId: institutionId,
-      ),
-      _trainingService.getCompletedTrainingCountForUser(
-        institutionId: institutionId,
-        userId: widget.userId,
-      ),
-      _documentService.getReadDocumentCountForUser(
-        userId: widget.userId,
-        institutionId: institutionId,
-      ),
-      _userService.getInstitutionName(institutionId),
-    ]);
-
-    return _UserDetailMetrics(
-      reportCount: results[0] as int,
-      completedTrainingCount: results[1] as int,
-      readDocumentCount: results[2] as int,
-      institutionName: widget.institutionName?.trim().isNotEmpty == true
-          ? widget.institutionName!.trim()
-          : ((results[3] as String?) ?? 'Institución no disponible'),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Detalle del usuario')),
@@ -98,254 +66,117 @@ class _InstitutionUserDetailScreenState
             );
           }
 
-          final displayName = (profile['displayName'] ?? 'Usuario sin nombre')
-              .toString();
+          final displayName = (profile['displayName'] ?? 'Usuario').toString();
           final email = (profile['email'] ?? 'Sin correo').toString();
           final role = (profile['role'] ?? 'user').toString();
-          final jobTitle = (profile['jobTitle'] ?? '').toString();
-          final photoUrl = (profile['photoUrl'] ?? '').toString();
-          final notificationsEnabled =
-              (profile['notificationsEnabled'] as bool?) ?? true;
-          final registeredTokens = List<String>.from(
-            profile['fcmTokens'] ?? const [],
-          );
-          final tokenCount = registeredTokens.length;
-          final notificationReady = notificationsEnabled && tokenCount > 0;
           final createdAt = profile['createdAt'] as Timestamp?;
           final currentInstitutionId =
               (profile['institutionId'] ?? widget.institutionId)
                   .toString()
                   .trim();
 
-          return FutureBuilder<_UserDetailMetrics>(
-            future: _loadMetrics(currentInstitutionId),
-            builder: (context, metricsSnap) {
-              final metrics = metricsSnap.data;
+          return FutureBuilder<String?>(
+            future: currentInstitutionId.isEmpty
+                ? Future.value(null)
+                : _userService.getInstitutionName(currentInstitutionId),
+            builder: (context, institutionSnap) {
+              final fallbackName = widget.institutionName?.trim() ?? '';
+              final remoteName = (institutionSnap.data ?? '').trim();
+              final institutionName = fallbackName.isNotEmpty
+                  ? fallbackName
+                  : (remoteName.isNotEmpty ? remoteName : 'Sin institucion');
 
               return ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: scheme.surface,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: scheme.outlineVariant),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  _SectionCard(
+                    title: 'Informacion principal',
+                    icon: Icons.badge_outlined,
+                    child: Column(
                       children: [
-                        CircleAvatar(
-                          radius: 32,
-                          backgroundImage: photoUrl.isNotEmpty
-                              ? NetworkImage(photoUrl)
-                              : null,
-                          child: photoUrl.isEmpty
-                              ? Text(
-                                  displayName.isNotEmpty
-                                      ? displayName.characters.first
-                                            .toUpperCase()
-                                      : 'U',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                )
-                              : null,
+                        _DetailItem(
+                          icon: Icons.mail_outline,
+                          label: 'Correo',
+                          value: email,
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayName,
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                email,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                              if (jobTitle.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  jobTitle,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  _InfoChip(
-                                    icon: Icons.badge_outlined,
-                                    label: _roleLabel(role),
-                                    highlighted:
-                                        role == 'admin_sst' || role == 'admin',
-                                  ),
-                                  _InfoChip(
-                                    icon: notificationsEnabled
-                                        ? Icons.notifications_active_outlined
-                                        : Icons.notifications_off_outlined,
-                                    label: notificationsEnabled
-                                        ? 'Notificaciones activas'
-                                        : 'Notificaciones desactivadas',
-                                  ),
-                                  _InfoChip(
-                                    icon: Icons.key_outlined,
-                                    label: 'Tokens: $tokenCount',
-                                    highlighted: tokenCount > 0,
-                                  ),
-                                  _InfoChip(
-                                    icon: notificationReady
-                                        ? Icons.verified_outlined
-                                        : Icons.warning_amber_outlined,
-                                    label: notificationReady
-                                        ? 'Listo para alertas'
-                                        : 'Pendiente de configuracion',
-                                    highlighted: notificationReady,
-                                  ),
-                                  _InfoChip(
-                                    icon: Icons.event_outlined,
-                                    label: createdAt != null
-                                        ? 'Registro ${_dateTimeFormat.format(createdAt.toDate())}'
-                                        : 'Sin fecha de registro',
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                        _DetailItem(
+                          icon: Icons.verified_user_outlined,
+                          label: 'Rol',
+                          value: _roleLabel(role),
+                        ),
+                        _DetailItem(
+                          icon: Icons.school_outlined,
+                          label: 'Institucion',
+                          value: institutionName,
+                        ),
+                        _DetailItem(
+                          icon: Icons.event_outlined,
+                          label: 'Fecha de registro',
+                          value: createdAt != null
+                              ? _dateTimeFormat.format(createdAt.toDate())
+                              : 'Sin fecha',
+                          isLast: true,
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Resumen del usuario',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (metricsSnap.connectionState == ConnectionState.waiting &&
-                      metrics == null)
-                    const Center(child: CircularProgressIndicator())
-                  else if (metricsSnap.hasError)
-                    _CenteredMessage(
-                      icon: Icons.analytics_outlined,
-                      title: 'No se pudieron cargar las metricas',
-                      subtitle: metricsSnap.error.toString(),
-                      color: scheme.error,
-                    )
-                  else if (metrics != null) ...[
-                    _SummaryGrid(metrics: metrics),
-                    const SizedBox(height: 20),
-                    FutureBuilder<CurrentUserData?>(
-                      future: _viewerFuture,
-                      builder: (context, viewerSnap) {
-                        final viewer = viewerSnap.data;
-                        final canManageUser =
-                            viewer?.role == 'admin' &&
-                            viewer?.uid != widget.userId;
+                  const SizedBox(height: 16),
+                  FutureBuilder<CurrentUserData?>(
+                    future: _viewerFuture,
+                    builder: (context, viewerSnap) {
+                      final viewer = viewerSnap.data;
+                      final canManageUser =
+                          viewer?.role == 'admin' &&
+                          viewer?.uid != widget.userId;
 
-                        if (!canManageUser) {
-                          return const SizedBox.shrink();
-                        }
+                      if (!canManageUser) {
+                        return const SizedBox.shrink();
+                      }
 
-                        return Column(
+                      return _SectionCard(
+                        title: 'Acciones de administracion',
+                        icon: Icons.admin_panel_settings_outlined,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            _SectionCard(
-                              title: 'Acciones de administración',
-                              icon: Icons.admin_panel_settings_outlined,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  if (role == 'admin_sst')
-                                    OutlinedButton.icon(
-                                      onPressed: () => _changeRole(
-                                        displayName: displayName,
-                                        role: role,
-                                      ),
-                                      icon: const Icon(Icons.person_outline),
-                                      label: const Text('Cambiar a Usuario'),
-                                    )
-                                  else
-                                    FilledButton.tonalIcon(
-                                      onPressed: () => _changeRole(
-                                        displayName: displayName,
-                                        role: role,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.verified_user_outlined,
-                                      ),
-                                      label: const Text(
-                                        'Asignar como Admin SST',
-                                      ),
-                                    ),
-                                  const SizedBox(height: 12),
-                                  OutlinedButton.icon(
-                                    onPressed: () => _unlinkUser(
-                                      displayName: displayName,
-                                      role: role,
-                                    ),
-                                    icon: const Icon(Icons.link_off_outlined),
-                                    label: const Text(
-                                      'Desvincular de la institución',
-                                    ),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: scheme.error,
-                                      side: BorderSide(color: scheme.error),
-                                    ),
-                                  ),
-                                ],
+                            if (role == 'admin_sst')
+                              OutlinedButton.icon(
+                                onPressed: () => _changeRole(
+                                  displayName: displayName,
+                                  role: role,
+                                ),
+                                icon: const Icon(Icons.person_outline),
+                                label: const Text('Cambiar a Usuario'),
+                              )
+                            else
+                              FilledButton.tonalIcon(
+                                onPressed: () => _changeRole(
+                                  displayName: displayName,
+                                  role: role,
+                                ),
+                                icon: const Icon(Icons.verified_user_outlined),
+                                label: const Text('Asignar como Admin SST'),
+                              ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: () => _unlinkUser(
+                                displayName: displayName,
+                                role: role,
+                              ),
+                              icon: const Icon(Icons.link_off_outlined),
+                              label: const Text(
+                                'Desvincular de la institucion',
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: scheme.error,
+                                side: BorderSide(color: scheme.error),
                               ),
                             ),
-                            const SizedBox(height: 20),
                           ],
-                        );
-                      },
-                    ),
-                    _SectionCard(
-                      title: 'Contexto',
-                      icon: Icons.account_balance_outlined,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _DetailRow(
-                            label: 'Institución',
-                            value: metrics.institutionName,
-                          ),
-                          _DetailRow(
-                            label: 'Rol actual',
-                            value: _roleLabel(role),
-                          ),
-                          _DetailRow(
-                            label: 'Estado de notificaciones',
-                            value: notificationsEnabled
-                                ? 'Activadas'
-                                : 'Desactivadas',
-                          ),
-                          _DetailRow(
-                            label: 'Tokens registrados',
-                            value: tokenCount.toString(),
-                          ),
-                          _DetailRow(
-                            label: 'Diagnostico backend',
-                            value: notificationReady
-                                ? 'Listo para recibir alertas'
-                                : 'Pendiente de configuracion',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                      );
+                    },
+                  ),
                 ],
               );
             },
@@ -356,7 +187,7 @@ class _InstitutionUserDetailScreenState
   }
 
   String _roleLabel(String role) {
-    switch (role) {
+    switch (role.trim().toLowerCase()) {
       case 'admin':
         return 'Super admin';
       case 'admin_sst':
@@ -374,13 +205,11 @@ class _InstitutionUserDetailScreenState
     final confirmed = await _showConfirmationDialog(
       title: makeAdminSst ? 'Asignar rol' : 'Cambiar rol',
       content: makeAdminSst
-          ? 'Se asignará a $displayName como Admin SST de esta institución.'
-          : 'Se cambiará el rol de $displayName a Usuario dentro de la institución.',
+          ? 'Se asignara a $displayName como Admin SST de esta institucion.'
+          : 'Se cambiara el rol de $displayName a Usuario dentro de la institucion.',
       confirmLabel: makeAdminSst ? 'Asignar' : 'Cambiar',
     );
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     await _runUserMutation(
       successMessage: makeAdminSst
@@ -400,16 +229,14 @@ class _InstitutionUserDetailScreenState
     final confirmed = await _showConfirmationDialog(
       title: 'Desvincular usuario',
       content:
-          'Se quitará a $displayName de esta institución. Si es Admin SST, volverá a rol Usuario.',
+          'Se quitara a $displayName de esta institucion. Si es Admin SST, volvera a rol Usuario.',
       confirmLabel: 'Desvincular',
       isDestructive: true,
     );
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
 
     await _runUserMutation(
-      successMessage: '$displayName fue desvinculado de la institución.',
+      successMessage: '$displayName fue desvinculado de la institucion.',
       popAfterSuccess: true,
       operation: () => _userService.unlinkUserFromInstitution(
         widget.userId,
@@ -425,9 +252,7 @@ class _InstitutionUserDetailScreenState
   }) async {
     try {
       await operation();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       ScaffoldMessenger.of(
         context,
@@ -437,9 +262,7 @@ class _InstitutionUserDetailScreenState
         Navigator.of(context).pop();
       }
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -480,115 +303,6 @@ class _InstitutionUserDetailScreenState
     );
 
     return result == true;
-  }
-}
-
-class _UserDetailMetrics {
-  final int reportCount;
-  final int completedTrainingCount;
-  final int readDocumentCount;
-  final String institutionName;
-
-  const _UserDetailMetrics({
-    required this.reportCount,
-    required this.completedTrainingCount,
-    required this.readDocumentCount,
-    required this.institutionName,
-  });
-}
-
-class _SummaryGrid extends StatelessWidget {
-  final _UserDetailMetrics metrics;
-
-  const _SummaryGrid({required this.metrics});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        _MetricCard(
-          label: 'Reportes',
-          value: metrics.reportCount.toString(),
-          icon: Icons.assignment_outlined,
-          color: scheme.primary,
-        ),
-        _MetricCard(
-          label: 'Capacitaciones',
-          value: metrics.completedTrainingCount.toString(),
-          icon: Icons.school_outlined,
-          color: scheme.secondary,
-        ),
-        _MetricCard(
-          label: 'Documentos leidos',
-          value: metrics.readDocumentCount.toString(),
-          icon: Icons.library_books_outlined,
-          color: Colors.teal,
-        ),
-      ],
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _MetricCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return SizedBox(
-      width: 164,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: scheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 36,
-              width: 36,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, size: 20, color: color),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              value,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -637,77 +351,54 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _DetailRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 140,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _InfoChip extends StatelessWidget {
+class _DetailItem extends StatelessWidget {
   final IconData icon;
   final String label;
-  final bool highlighted;
+  final String value;
+  final bool isLast;
 
-  const _InfoChip({
+  const _DetailItem({
     required this.icon,
     required this.label,
-    this.highlighted = false,
+    required this.value,
+    this.isLast = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final backgroundColor = highlighted
-        ? scheme.primaryContainer.withValues(alpha: 0.7)
-        : scheme.surfaceContainerHighest;
-    final foregroundColor = highlighted
-        ? scheme.onPrimaryContainer
-        : scheme.onSurfaceVariant;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      margin: EdgeInsets.only(bottom: isLast ? 0 : 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(999),
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.7)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: foregroundColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: foregroundColor,
-              fontWeight: FontWeight.w600,
+          Icon(icon, size: 18, color: scheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
           ),
         ],

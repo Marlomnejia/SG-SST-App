@@ -260,14 +260,22 @@ class TrainingService {
     ).doc(trainingId).collection('responses').doc(user.uid);
     final existing = await responseRef.get();
     final existingData = existing.data();
-    if (existing.exists &&
-        (existingData?['response'] ?? '').toString().trim().isNotEmpty) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'already-exists',
-        message:
-            'Ya registraste tu confirmacion. Si necesitas cambiarla, contacta al responsable.',
-      );
+    if (existing.exists) {
+      final existingResponse = (existingData?['response'] ?? '')
+          .toString()
+          .trim();
+      if (existingResponse.isNotEmpty) {
+        if (existingResponse == response.trim()) {
+          // Reintento idempotente: ya estaba guardado con el mismo valor.
+          return;
+        }
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'already-exists',
+          message:
+              'Ya registraste tu confirmacion. Si necesitas cambiarla, contacta al responsable.',
+        );
+      }
     }
 
     final userProfile = await _firestore

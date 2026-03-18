@@ -578,11 +578,29 @@ class _SgSstReportGenerationScreenState
     }
   }
 
+  // ignore: unused_element
   String _pdfTopFindingsLabel(List<_TopFindingItem> items) {
     if (items.isEmpty) {
       return 'Sin datos';
     }
     return items.map((item) => '${item.label} (${item.count})').join(', ');
+  }
+
+  List<String> _pdfTopFindingsLines(List<_TopFindingItem> items) {
+    if (items.isEmpty) {
+      return const <String>['Sin datos'];
+    }
+    return items
+        .take(3)
+        .map((item) => '${_pdfClip(item.label, max: 60)} (${item.count})')
+        .toList();
+  }
+
+  String _pdfClip(String value, {int max = 96}) {
+    final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) return 'N/A';
+    if (normalized.length <= max) return normalized;
+    return '${normalized.substring(0, max - 1)}...';
   }
 
   List<String> _buildExecutiveConclusions(_GeneratedSgSstReport report) {
@@ -694,206 +712,102 @@ class _SgSstReportGenerationScreenState
     required String generatedBy,
     String? subtitle,
   }) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.all(16),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.teal900,
-        borderRadius: pw.BorderRadius.circular(14),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Row(
-            children: [
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.white,
-                  borderRadius: pw.BorderRadius.circular(999),
-                ),
-                child: pw.Text(
-                  'EduSST',
-                  style: pw.TextStyle(
-                    color: PdfColors.teal900,
-                    fontSize: 10,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.Spacer(),
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: pw.BoxDecoration(
-                  color: PdfColors.amber100,
-                  borderRadius: pw.BorderRadius.circular(999),
-                ),
-                child: pw.Text(
-                  periodLabel,
-                  style: pw.TextStyle(
-                    color: PdfColors.amber900,
-                    fontSize: 9,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          pw.SizedBox(height: 10),
-          pw.Text(
-            title,
-            style: pw.TextStyle(
-              color: PdfColors.white,
-              fontSize: 20,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-          if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 4),
-            pw.Text(
-              subtitle,
-              style: const pw.TextStyle(color: PdfColors.white, fontSize: 9),
-            ),
-          ],
-          pw.SizedBox(height: 10),
-          pw.Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildPdfMetaPill('Institucion', institutionName),
-              _buildPdfMetaPill(
-                'Periodo',
-                '$periodLabel (${_dateFormat.format(startDate)} - ${_dateFormat.format(endDate)})',
-              ),
-              _buildPdfMetaPill('Generado por', generatedBy),
-            ],
-          ),
+    final subtitleText = subtitle?.trim() ?? '';
+    final periodText =
+        '$periodLabel (${_dateFormat.format(startDate)} - ${_dateFormat.format(endDate)})';
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+        ),
+        if (subtitleText.isNotEmpty) ...[
+          pw.SizedBox(height: 3),
+          pw.Text(subtitleText, style: const pw.TextStyle(fontSize: 9)),
         ],
-      ),
+        pw.SizedBox(height: 8),
+        pw.Text('Institucion: $institutionName'),
+        pw.Text('Periodo: $periodText'),
+        pw.Text('Generado por: $generatedBy'),
+        pw.Text(
+          'Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}',
+        ),
+        pw.SizedBox(height: 8),
+        pw.Divider(color: PdfColors.grey500, thickness: 0.8),
+      ],
     );
   }
 
   pw.Widget _buildPdfPageRibbon(String label) {
     return pw.Container(
-      margin: const pw.EdgeInsets.only(bottom: 10),
-      child: pw.Row(
-        children: [
-          pw.Container(
-            padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.blueGrey50,
-              borderRadius: pw.BorderRadius.circular(999),
-              border: pw.Border.all(color: PdfColors.blueGrey200),
-            ),
-            child: pw.Text(
-              label,
-              style: pw.TextStyle(
-                fontSize: 8.5,
-                color: PdfColors.blueGrey800,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          pw.Spacer(),
-          pw.Text(
-            'EduSST',
-            style: const pw.TextStyle(
-              fontSize: 8.5,
-              color: PdfColors.blueGrey600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _buildPdfMetaPill(String label, String value) {
-    return pw.Container(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.white,
-        borderRadius: pw.BorderRadius.circular(999),
-      ),
-      child: pw.RichText(
-        text: pw.TextSpan(
-          style: const pw.TextStyle(
-            fontSize: 8.5,
-            color: PdfColors.blueGrey900,
-          ),
-          children: [
-            pw.TextSpan(
-              text: '$label: ',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            ),
-            pw.TextSpan(text: value),
-          ],
-        ),
+      margin: const pw.EdgeInsets.only(bottom: 6),
+      child: pw.Text(
+        label,
+        style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
       ),
     );
   }
 
   pw.Widget _buildPdfSectionTitle(String title, {String? subtitle}) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blueGrey50,
-        border: pw.Border(
-          left: pw.BorderSide(color: PdfColors.blueGrey700, width: 3),
+    final subtitleText = subtitle?.trim() ?? '';
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
         ),
-        borderRadius: pw.BorderRadius.circular(8),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            title,
-            style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
-          ),
-          if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-            pw.SizedBox(height: 3),
-            pw.Text(
-              subtitle,
-              style: const pw.TextStyle(
-                fontSize: 8.5,
-                color: PdfColors.blueGrey700,
-              ),
-            ),
-          ],
+        if (subtitleText.isNotEmpty) ...[
+          pw.SizedBox(height: 2),
+          pw.Text(subtitleText, style: const pw.TextStyle(fontSize: 8.5)),
         ],
-      ),
+        pw.SizedBox(height: 3),
+        pw.Divider(color: PdfColors.grey400, thickness: 0.7),
+      ],
     );
   }
 
   pw.Widget _buildStyledPdfTable(
     List<List<String>> data, {
     double fontSize = 8.5,
+    Map<int, pw.TableColumnWidth>? columnWidths,
   }) {
+    if (data.isEmpty || data.first.isEmpty) {
+      return pw.Text('Sin datos disponibles.');
+    }
+    final totalCols = data.first.length;
+    final normalized = data
+        .map((row) {
+          final current = <String>[];
+          for (int index = 0; index < totalCols; index++) {
+            final raw = index < row.length ? row[index] : '-';
+            current.add(_pdfClip(raw.toString(), max: 96));
+          }
+          return current;
+        })
+        .toList(growable: false);
+
     return pw.TableHelper.fromTextArray(
-      data: data,
-      headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey700),
+      data: normalized,
+      headerDecoration: null,
       headerStyle: pw.TextStyle(
-        color: PdfColors.white,
+        color: PdfColors.black,
         fontWeight: pw.FontWeight.bold,
         fontSize: fontSize,
       ),
-      cellStyle: pw.TextStyle(fontSize: fontSize, color: PdfColors.blueGrey900),
-      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-      rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
-      oddRowDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey50),
-      border: pw.TableBorder.all(color: PdfColors.blueGrey200, width: 0.6),
+      cellStyle: pw.TextStyle(fontSize: fontSize, color: PdfColors.black),
+      cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      rowDecoration: null,
+      oddRowDecoration: null,
+      border: pw.TableBorder.all(color: PdfColors.grey700, width: 0.6),
+      columnWidths: columnWidths,
       headerAlignments: {
-        for (int index = 0; index < data.first.length; index++)
+        for (int index = 0; index < totalCols; index++)
           index: pw.Alignment.centerLeft,
       },
       cellAlignments: {
-        for (int index = 0; index < data.first.length; index++)
+        for (int index = 0; index < totalCols; index++)
           index: pw.Alignment.centerLeft,
       },
     );
@@ -903,180 +817,93 @@ class _SgSstReportGenerationScreenState
     required String label,
     required String value,
   }) {
-    return pw.Container(
-      width: 128,
-      padding: const pw.EdgeInsets.all(10),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blueGrey50,
-        borderRadius: pw.BorderRadius.circular(10),
-        border: pw.Border.all(color: PdfColors.blueGrey200),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            value,
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Text(
-            label,
-            style: const pw.TextStyle(
-              fontSize: 8.5,
-              color: PdfColors.blueGrey700,
-            ),
-          ),
-        ],
-      ),
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(value, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        pw.Text(label, style: const pw.TextStyle(fontSize: 8.5)),
+      ],
     );
   }
 
   pw.Widget _buildPdfInsightList(String title, List<String> items) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blueGrey50,
-        borderRadius: pw.BorderRadius.circular(10),
-        border: pw.Border.all(color: PdfColors.blueGrey200),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            title,
-            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+    final lines = items.isEmpty ? const <String>['Sin datos'] : items;
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          title,
+          style: pw.TextStyle(fontSize: 10.5, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 4),
+        ...lines.map(
+          (item) => pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 3),
+            child: pw.Text('- $item', style: const pw.TextStyle(fontSize: 9)),
           ),
-          pw.SizedBox(height: 8),
-          if (items.isEmpty)
-            pw.Text('Sin datos', style: const pw.TextStyle(fontSize: 9))
-          else
-            ...items.map(
-              (item) => pw.Padding(
-                padding: const pw.EdgeInsets.only(bottom: 6),
-                child: pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Container(
-                      margin: const pw.EdgeInsets.only(top: 4),
-                      width: 4,
-                      height: 4,
-                      decoration: const pw.BoxDecoration(
-                        color: PdfColors.blueGrey800,
-                        shape: pw.BoxShape.circle,
-                      ),
-                    ),
-                    pw.SizedBox(width: 6),
-                    pw.Expanded(
-                      child: pw.Text(
-                        item,
-                        style: const pw.TextStyle(fontSize: 9),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   pw.Widget _buildPdfSignaturePanel(_GeneratedSgSstReport report) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.all(14),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blueGrey50,
-        borderRadius: pw.BorderRadius.circular(12),
-        border: pw.Border.all(color: PdfColors.blueGrey200),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Bloque de firmas',
-            style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Text('Institucion: ${report.institutionName}'),
-          pw.Text(
-            'Generado por: ${report.generatedByName} (${report.generatedByRole})',
-          ),
-          pw.Text(
-            'Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}',
-          ),
-          pw.SizedBox(height: 14),
-          pw.Row(
-            children: [
-              pw.Expanded(
-                child: pw.Text('Revisado por: ______________________'),
-              ),
-              pw.SizedBox(width: 16),
-              pw.Expanded(
-                child: pw.Text('Aprobado por: ______________________'),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Bloque de firmas',
+          style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 6),
+        pw.Text('Institucion: ${report.institutionName}'),
+        pw.Text(
+          'Generado por: ${report.generatedByName} (${report.generatedByRole})',
+        ),
+        pw.Text(
+          'Fecha de emision: ${_dateTimeFormat.format(DateTime.now())}',
+        ),
+        pw.SizedBox(height: 12),
+        pw.Text('Revisado por: ______________________'),
+        pw.SizedBox(height: 8),
+        pw.Text('Aprobado por: ______________________'),
+      ],
     );
   }
 
+  // ignore: unused_element
   pw.Widget _buildPdfClassificationPanel({
     required String classification,
     required String audience,
     required String validity,
   }) {
-    return pw.Container(
-      width: double.infinity,
-      padding: const pw.EdgeInsets.all(12),
-      decoration: pw.BoxDecoration(
-        color: PdfColors.blueGrey50,
-        borderRadius: pw.BorderRadius.circular(10),
-        border: pw.Border.all(color: PdfColors.blueGrey200),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Text(
-            'Clasificacion del documento',
-            style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 8),
-          pw.Text('Tipo: $classification'),
-          pw.Text('Destinatario: $audience'),
-          pw.Text('Vigencia: $validity'),
-        ],
-      ),
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Clasificacion del documento',
+          style: pw.TextStyle(fontSize: 10.5, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text('Tipo: $classification'),
+        pw.Text('Destinatario: $audience'),
+        pw.Text('Vigencia: $validity'),
+      ],
     );
   }
 
   pw.Widget _buildPdfFooter(pw.Context context) {
     return pw.Container(
-      margin: const pw.EdgeInsets.only(top: 12),
-      padding: const pw.EdgeInsets.only(top: 8),
-      decoration: const pw.BoxDecoration(
-        border: pw.Border(
-          top: pw.BorderSide(color: PdfColors.blueGrey200, width: 0.8),
-        ),
-      ),
+      margin: const pw.EdgeInsets.only(top: 8),
       child: pw.Row(
         children: [
           pw.Text(
-            'EduSST | Seguridad y Salud en el Trabajo',
-            style: const pw.TextStyle(
-              fontSize: 8,
-              color: PdfColors.blueGrey600,
-            ),
+            'EduSST - Informe SG-SST',
+            style: const pw.TextStyle(fontSize: 8),
           ),
           pw.Spacer(),
           pw.Text(
             'Pagina ${context.pageNumber} de ${context.pagesCount}',
-            style: const pw.TextStyle(
-              fontSize: 8,
-              color: PdfColors.blueGrey600,
-            ),
+            style: const pw.TextStyle(fontSize: 8),
           ),
         ],
       ),
@@ -1108,6 +935,7 @@ class _SgSstReportGenerationScreenState
     );
   }
 
+  // ignore: unused_element
   pw.Widget _buildTechnicalPdfCover(
     _GeneratedSgSstReport report, {
     required String periodLabel,
@@ -1264,6 +1092,7 @@ class _SgSstReportGenerationScreenState
     );
   }
 
+  // ignore: unused_element
   pw.Widget _buildExecutivePdfCover(
     _GeneratedSgSstReport report, {
     required String periodLabel,
@@ -1433,37 +1262,69 @@ class _SgSstReportGenerationScreenState
     try {
       final pdf = pw.Document();
       final periodLabel = _exportPeriodLabel(_selectedPeriod);
-      final latestCases = report.reports.take(3).map((doc) {
-        final data = doc.data();
-        return '${(data['caseNumber'] ?? doc.id)} | ${_friendlyStatus((data['status'] ?? '').toString())} | ${(data['reportType'] ?? '').toString()}';
-      }).toList();
-      final latestPlans = report.actionPlans.take(3).map((doc) {
-        final data = doc.data();
-        return '${(data['title'] ?? data['descripcion'] ?? 'Plan sin titulo')} | ${_friendlyPlanStatus(_planStatus(data))}';
-      }).toList();
+      final latestCasesRows = <List<String>>[
+        <String>['Caso', 'Fecha', 'Estado', 'Que reporta'],
+        ...report.reports.take(3).map((doc) {
+          final data = doc.data();
+          return <String>[
+            (data['caseNumber'] ?? doc.id).toString(),
+            _formatDate(
+              _extractDate(data['createdAt']) ?? _extractDate(data['datetime']),
+            ),
+            _friendlyStatus((data['status'] ?? '').toString()),
+            _pdfClip((data['reportType'] ?? 'Sin tipo').toString(), max: 44),
+          ];
+        }),
+      ];
+      final latestPlansRows = <List<String>>[
+        <String>['Plan', 'Responsable', 'Estado', 'Limite'],
+        ...report.actionPlans.take(3).map((doc) {
+          final data = doc.data();
+          return <String>[
+            _pdfClip(
+              (data['title'] ?? data['descripcion'] ?? 'Plan sin titulo')
+                  .toString(),
+              max: 42,
+            ),
+            _pdfClip(
+              (data['responsibleName'] ??
+                      data['asignadoA'] ??
+                      'Sin responsable')
+                  .toString(),
+              max: 32,
+            ),
+            _friendlyPlanStatus(_planStatus(data)),
+            _formatDate(
+              _extractDate(data['dueDate']) ??
+                  _extractDate(data['fechaLimite']),
+            ),
+          ];
+        }),
+      ];
+      final summaryRows = <List<String>>[
+        <String>['Indicador', 'Valor'],
+        <String>['Casos registrados', '${report.totalReports}'],
+        <String>['Casos cerrados', '${report.closedReportsCount}'],
+        <String>['Casos graves', '${report.severeReportsCount}'],
+        <String>['Tiempo promedio a cierre', report.averageClosureLabel],
+        <String>['Planes vencidos', '${report.overduePlansCount}'],
+        <String>[
+          'Cobertura documental',
+          '${(report.documentCoverageRate * 100).toStringAsFixed(1)}%',
+        ],
+      ];
       final executiveConclusions = _buildExecutiveConclusions(report);
-
-      pdf.addPage(
-        pw.Page(
-          margin: const pw.EdgeInsets.all(24),
-          build: (context) => _buildExecutivePdfCover(
-            report,
-            periodLabel: periodLabel,
-            context: context,
-          ),
-        ),
-      );
 
       pdf.addPage(
         pw.MultiPage(
           margin: const pw.EdgeInsets.all(24),
-          header: (_) => _buildPdfPageRibbon('PDF Ejecutivo'),
+          header: (_) => _buildPdfPageRibbon('Reporte ejecutivo'),
           footer: _buildPdfFooter,
           build: (context) => <pw.Widget>[
             _buildPdfHeader(
               title: 'Reporte Ejecutivo SG-SST',
               subtitle:
-                  'Resumen institucional para seguimiento gerencial y revision operativa.',
+                  'Resumen institucional claro y consolidado del periodo.',
               institutionName: report.institutionName,
               periodLabel: periodLabel,
               startDate: report.startDate,
@@ -1474,60 +1335,37 @@ class _SgSstReportGenerationScreenState
             pw.SizedBox(height: 12),
             _buildPdfSectionTitle(
               'Resumen ejecutivo',
-              subtitle:
-                  'Indicadores clave del periodo para una lectura rapida del estado SG-SST.',
+              subtitle: 'KPIs clave para seguimiento directivo.',
             ),
             pw.SizedBox(height: 8),
-            pw.Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _buildPdfMetricCard(
-                  label: 'Casos registrados',
-                  value: '${report.totalReports}',
-                ),
-                _buildPdfMetricCard(
-                  label: 'Casos cerrados',
-                  value: '${report.closedReportsCount}',
-                ),
-                _buildPdfMetricCard(
-                  label: 'Casos graves',
-                  value: '${report.severeReportsCount}',
-                ),
-                _buildPdfMetricCard(
-                  label: 'Tiempo promedio a cierre',
-                  value: report.averageClosureLabel,
-                ),
-                _buildPdfMetricCard(
-                  label: 'Planes vencidos',
-                  value: '${report.overduePlansCount}',
-                ),
-                _buildPdfMetricCard(
-                  label: 'Cobertura documental',
-                  value:
-                      '${(report.documentCoverageRate * 100).toStringAsFixed(1)}%',
-                ),
-              ],
+            _buildStyledPdfTable(
+              summaryRows,
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(2),
+              },
             ),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle('Hallazgos principales'),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Top 3 que estas reportando', [
-              _pdfTopFindingsLabel(report.topReportTypes),
-            ]),
+            _buildPdfInsightList(
+              'Top 3 que estas reportando',
+              _pdfTopFindingsLines(report.topReportTypes),
+            ),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Top 3 lugares o areas', [
-              _pdfTopFindingsLabel(report.topPlaces),
-            ]),
+            _buildPdfInsightList(
+              'Top 3 lugares o areas',
+              _pdfTopFindingsLines(report.topPlaces),
+            ),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Top 3 responsables con planes vencidos', [
-              _pdfTopFindingsLabel(report.topOverdueResponsibles),
-            ]),
+            _buildPdfInsightList(
+              'Top 3 responsables con planes vencidos',
+              _pdfTopFindingsLines(report.topOverdueResponsibles),
+            ),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle(
               'Conclusiones y recomendaciones',
-              subtitle:
-                  'Sugerencias automaticas generadas a partir de los indicadores consolidados.',
+              subtitle: 'Acciones sugeridas para el siguiente ciclo.',
             ),
             pw.SizedBox(height: 8),
             _buildPdfInsightList(
@@ -1537,18 +1375,13 @@ class _SgSstReportGenerationScreenState
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle('Ultimos 3 casos'),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Casos recientes', latestCases),
+            _buildStyledPdfTable(latestCasesRows),
             pw.SizedBox(height: 12),
             _buildPdfSectionTitle('Ultimos 3 planes'),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Planes recientes', latestPlans),
+            _buildStyledPdfTable(latestPlansRows),
             pw.SizedBox(height: 14),
-            _buildPdfClassificationPanel(
-              classification: 'Informe ejecutivo de uso interno',
-              audience: 'Direccion, comites y seguimiento gerencial',
-              validity:
-                  'Vigente hasta la siguiente emision del consolidado del periodo',
-            ),
+            _buildPdfSignaturePanel(report),
           ],
         ),
       );
@@ -1599,17 +1432,47 @@ class _SgSstReportGenerationScreenState
         ],
         <String>['Tiempo promedio a cierre', report.averageClosureLabel],
       ];
+      final trainingRows = <List<String>>[
+        <String>['Indicador', 'Valor'],
+        <String>[
+          'Capacitaciones publicadas',
+          '${report.trainingMetrics.publishedCount}',
+        ],
+        <String>['Programadas', '${report.trainingMetrics.scheduledCount}'],
+        <String>['Videos', '${report.trainingMetrics.videoCount}'],
+        <String>[
+          'Confirmaciones positivas',
+          '${report.trainingMetrics.confirmedCount}',
+        ],
+        <String>[
+          'Asistencias registradas',
+          '${report.trainingMetrics.attendedCount}',
+        ],
+        <String>['Videos vistos', '${report.trainingMetrics.watchedCount}'],
+        <String>[
+          'Documentos institucionales publicados',
+          '${report.documentMetrics.publishedInstitutionCount}',
+        ],
+        <String>[
+          'Documentos globales vigentes',
+          '${report.documentMetrics.publishedGlobalCount}',
+        ],
+        <String>[
+          'Documentos con lectura',
+          '${report.documentMetrics.documentsWithReads}',
+        ],
+      ];
 
       final latestCases = <List<String>>[
         <String>['Caso', 'Fecha', 'Tipo', 'Estado'],
-        ...report.reports.take(12).map((doc) {
+        ...report.reports.take(20).map((doc) {
           final data = doc.data();
           return <String>[
             (data['caseNumber'] ?? doc.id).toString(),
             _formatDate(
               _extractDate(data['createdAt']) ?? _extractDate(data['datetime']),
             ),
-            (data['eventType'] ?? '').toString(),
+            _pdfClip((data['eventType'] ?? '').toString(), max: 26),
             _friendlyStatus((data['status'] ?? '').toString()),
           ];
         }),
@@ -1621,51 +1484,44 @@ class _SgSstReportGenerationScreenState
           'Estado',
           'Limite',
           'Avance',
-          'Adj. ejec.',
           'Validacion',
-          'Adj. val.',
         ],
-        ...report.actionPlans.take(12).map((doc) {
+        ...report.actionPlans.take(20).map((doc) {
           final data = doc.data();
           return <String>[
-            (data['title'] ?? data['descripcion'] ?? 'Plan sin titulo')
-                .toString(),
-            (data['responsibleName'] ?? data['asignadoA'] ?? 'Sin responsable')
-                .toString(),
+            _pdfClip(
+              (data['title'] ?? data['descripcion'] ?? 'Plan sin titulo')
+                  .toString(),
+              max: 42,
+            ),
+            _pdfClip(
+              (data['responsibleName'] ??
+                      data['asignadoA'] ??
+                      'Sin responsable')
+                  .toString(),
+              max: 28,
+            ),
             _friendlyPlanStatus(_planStatus(data)),
             _formatDate(
               _extractDate(data['dueDate']) ??
                   _extractDate(data['fechaLimite']),
             ),
-            _planExecutionSummary(data),
-            '${_attachmentCount(data['executionAttachments'])}',
-            _planValidationSummary(data),
-            '${_attachmentCount(data['closureAttachments'])}',
+            _pdfClip(_planExecutionSummary(data), max: 42),
+            _pdfClip(_planValidationSummary(data), max: 42),
           ];
         }),
       ];
 
       pdf.addPage(
-        pw.Page(
-          margin: const pw.EdgeInsets.all(24),
-          build: (context) => _buildTechnicalPdfCover(
-            report,
-            periodLabel: periodLabel,
-            context: context,
-          ),
-        ),
-      );
-
-      pdf.addPage(
         pw.MultiPage(
           margin: const pw.EdgeInsets.all(24),
-          header: (_) => _buildPdfPageRibbon('PDF Tecnico'),
+          header: (_) => _buildPdfPageRibbon('Reporte tecnico'),
           footer: _buildPdfFooter,
           build: (context) => <pw.Widget>[
             _buildPdfHeader(
               title: 'Consolidado Tecnico SG-SST',
               subtitle:
-                  'Informe detallado para seguimiento, auditoria interna y soporte institucional.',
+                  'Informe detallado para seguimiento y auditoria interna.',
               institutionName: report.institutionName,
               periodLabel: periodLabel,
               startDate: report.startDate,
@@ -1675,81 +1531,58 @@ class _SgSstReportGenerationScreenState
             ),
             pw.SizedBox(height: 12),
             _buildPdfSectionTitle(
-              'Resumen ejecutivo',
-              subtitle:
-                  'Consolida los principales indicadores del periodo y su comportamiento general.',
+              'Resumen de indicadores',
+              subtitle: 'Lectura principal del comportamiento del periodo.',
             ),
             pw.SizedBox(height: 8),
-            _buildStyledPdfTable(summaryRows),
+            _buildStyledPdfTable(
+              summaryRows,
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(2),
+              },
+            ),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle(
               'Alineacion operativa con Resolucion 0312 de 2019',
-              subtitle:
-                  'Relaciona el consolidado con control de incidentes, planes de trabajo e indicadores internos.',
+              subtitle: 'Puntos de referencia para verificacion interna.',
             ),
             pw.SizedBox(height: 8),
             _buildPdfInsightList('Referencias normativas', [
-              '3.2.2: seguimiento de incidentes, accidentes y casos reportados.',
-              '2.4.1: control del plan de trabajo mediante planes de accion y vencimientos.',
-              '6.1.1: indicadores internos de cierre, participacion y soporte documental.',
+              'Seguimiento y control de incidentes, accidentes y condiciones reportadas.',
+              'Gestion del plan de trabajo anual mediante planes de accion, responsables y fechas.',
+              'Medicion de indicadores de gestion para evaluar avance y mejora continua del SG-SST.',
             ]),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle(
               'Capacitaciones y evidencia',
-              subtitle:
-                  'Integra participacion, asistencias y soporte documental disponible.',
+              subtitle: 'Participacion y soporte documental del periodo.',
             ),
             pw.SizedBox(height: 8),
-            _buildStyledPdfTable(<List<String>>[
-              <String>['Indicador', 'Valor'],
-              <String>[
-                'Capacitaciones publicadas',
-                '${report.trainingMetrics.publishedCount}',
-              ],
-              <String>[
-                'Programadas',
-                '${report.trainingMetrics.scheduledCount}',
-              ],
-              <String>['Videos', '${report.trainingMetrics.videoCount}'],
-              <String>[
-                'Confirmaciones positivas',
-                '${report.trainingMetrics.confirmedCount}',
-              ],
-              <String>[
-                'Asistencias registradas',
-                '${report.trainingMetrics.attendedCount}',
-              ],
-              <String>[
-                'Videos vistos',
-                '${report.trainingMetrics.watchedCount}',
-              ],
-              <String>[
-                'Documentos institucionales publicados',
-                '${report.documentMetrics.publishedInstitutionCount}',
-              ],
-              <String>[
-                'Documentos globales vigentes',
-                '${report.documentMetrics.publishedGlobalCount}',
-              ],
-              <String>[
-                'Documentos con lectura',
-                '${report.documentMetrics.documentsWithReads}',
-              ],
-            ]),
+            _buildStyledPdfTable(
+              trainingRows,
+              columnWidths: {
+                0: const pw.FlexColumnWidth(3),
+                1: const pw.FlexColumnWidth(2),
+              },
+            ),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle('Hallazgos principales'),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Top 3 que estas reportando', [
-              _pdfTopFindingsLabel(report.topReportTypes),
-            ]),
+            _buildPdfInsightList(
+              'Top 3 que estas reportando',
+              _pdfTopFindingsLines(report.topReportTypes),
+            ),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Top 3 lugares o areas', [
-              _pdfTopFindingsLabel(report.topPlaces),
-            ]),
+            _buildPdfInsightList(
+              'Top 3 lugares o areas',
+              _pdfTopFindingsLines(report.topPlaces),
+            ),
             pw.SizedBox(height: 8),
-            _buildPdfInsightList('Top 3 responsables con planes vencidos', [
-              _pdfTopFindingsLabel(report.topOverdueResponsibles),
-            ]),
+            _buildPdfInsightList(
+              'Top 3 responsables con planes vencidos',
+              _pdfTopFindingsLines(report.topOverdueResponsibles),
+            ),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle('Ultimos casos del periodo'),
             pw.SizedBox(height: 8),
@@ -1757,8 +1590,7 @@ class _SgSstReportGenerationScreenState
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle(
               'Detalle tecnico de planes de accion',
-              subtitle:
-                  'Incluye avance reportado, estado de validacion y cantidad de soportes asociados.',
+              subtitle: 'Resumen operativo de ejecucion y validacion.',
             ),
             pw.SizedBox(height: 8),
             if (report.actionPlans.isEmpty)
@@ -1769,7 +1601,18 @@ class _SgSstReportGenerationScreenState
                 ),
               )
             else
-              _buildStyledPdfTable(detailedPlans, fontSize: 7.5),
+              _buildStyledPdfTable(
+                detailedPlans,
+                fontSize: 7.8,
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(2.6),
+                  1: const pw.FlexColumnWidth(1.5),
+                  2: const pw.FlexColumnWidth(1.1),
+                  3: const pw.FlexColumnWidth(1.2),
+                  4: const pw.FlexColumnWidth(2.0),
+                  5: const pw.FlexColumnWidth(2.0),
+                },
+              ),
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle(
               'Metodologia de indicadores',
@@ -1785,14 +1628,6 @@ class _SgSstReportGenerationScreenState
             ]),
             pw.SizedBox(height: 18),
             _buildPdfSignaturePanel(report),
-            pw.SizedBox(height: 12),
-            _buildPdfClassificationPanel(
-              classification: 'Informe tecnico de control y auditoria',
-              audience:
-                  'Admin SST, revision institucional y procesos de auditoria interna',
-              validity:
-                  'Vigente como soporte del periodo consolidado hasta nueva emision',
-            ),
           ],
         ),
       );
@@ -3182,3 +3017,4 @@ class _EmptyStateCard extends StatelessWidget {
     );
   }
 }
+

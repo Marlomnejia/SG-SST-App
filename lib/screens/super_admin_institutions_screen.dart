@@ -85,6 +85,12 @@ class _SuperAdminInstitutionsScreenState
                 (institution) => institution.status == InstitutionStatus.active,
               )
               .length;
+          final suspendedCount = institutions
+              .where(
+                (institution) =>
+                    institution.status == InstitutionStatus.suspended,
+              )
+              .length;
           final rejectedCount = institutions
               .where(
                 (institution) =>
@@ -101,6 +107,7 @@ class _SuperAdminInstitutionsScreenState
                   totalCount: institutions.length,
                   pendingCount: pendingCount,
                   activeCount: activeCount,
+                  suspendedCount: suspendedCount,
                   rejectedCount: rejectedCount,
                 ),
               ),
@@ -135,6 +142,14 @@ class _SuperAdminInstitutionsScreenState
                         selected: _selectedFilter == InstitutionStatus.active,
                         onTap: () => setState(
                           () => _selectedFilter = InstitutionStatus.active,
+                        ),
+                      ),
+                      _FilterChip(
+                        label: 'Suspendidas',
+                        selected:
+                            _selectedFilter == InstitutionStatus.suspended,
+                        onTap: () => setState(
+                          () => _selectedFilter = InstitutionStatus.suspended,
                         ),
                       ),
                       _FilterChip(
@@ -346,6 +361,7 @@ class _OverviewBanner extends StatelessWidget {
   final int totalCount;
   final int pendingCount;
   final int activeCount;
+  final int suspendedCount;
   final int rejectedCount;
 
   const _OverviewBanner({
@@ -353,6 +369,7 @@ class _OverviewBanner extends StatelessWidget {
     required this.totalCount,
     required this.pendingCount,
     required this.activeCount,
+    required this.suspendedCount,
     required this.rejectedCount,
   });
 
@@ -362,6 +379,7 @@ class _OverviewBanner extends StatelessWidget {
     final filterLabel = switch (selectedFilter) {
       InstitutionStatus.pending => 'Pendientes',
       InstitutionStatus.active => 'Activas',
+      InstitutionStatus.suspended => 'Suspendidas',
       InstitutionStatus.rejected => 'Rechazadas',
       null => 'Todas',
     };
@@ -413,6 +431,10 @@ class _OverviewBanner extends StatelessWidget {
               _BannerPill(
                 label: '$activeCount activas',
                 icon: Icons.verified_outlined,
+              ),
+              _BannerPill(
+                label: '$suspendedCount suspendidas',
+                icon: Icons.pause_circle_outline,
               ),
               _BannerPill(
                 label: '$rejectedCount rechazadas',
@@ -479,6 +501,10 @@ class _StatusChip extends StatelessWidget {
       case InstitutionStatus.active:
         color = Colors.green;
         label = 'Activa';
+        break;
+      case InstitutionStatus.suspended:
+        color = Colors.orange.shade700;
+        label = 'Suspendida';
         break;
       case InstitutionStatus.rejected:
         color = scheme.error;

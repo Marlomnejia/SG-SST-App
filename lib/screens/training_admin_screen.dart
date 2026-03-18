@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/training_module_model.dart';
 import '../services/notification_service.dart';
 import '../services/training_service.dart';
@@ -18,14 +21,22 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
   final TrainingService _service = TrainingService();
   final UserService _userService = UserService();
   final NotificationService _notificationService = NotificationService();
-  final DateFormat _dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+  final DateFormat _dateFormat = DateFormat('dd/MM/yyyy hh:mm a');
+  final TextEditingController _searchController = TextEditingController();
+  String _combinedFilter = 'all';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestión de capacitaciones'),
+        title: const Text('GestiÃ³n de capacitaciones'),
         actions: [
           IconButton(
             tooltip: 'Probar notificacion',
@@ -54,7 +65,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Aún no hay capacitaciones creadas',
+                      'AÃºn no hay capacitaciones creadas',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
@@ -62,7 +73,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Crea la primera capacitación para tu institución.',
+                      'Crea la primera capacitaciÃ³n para tu instituciÃ³n.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
@@ -72,7 +83,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                     FilledButton.icon(
                       onPressed: _openForm,
                       icon: const Icon(Icons.add),
-                      label: const Text('Crear capacitación'),
+                      label: const Text('Crear capacitaciÃ³n'),
                     ),
                   ],
                 ),
@@ -82,231 +93,473 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
           final docs = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
             snapshot.data!.docs,
           )..sort(_sortAdminDocs);
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-            itemCount: docs.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (context, index) {
-              final doc = docs[index];
-              final data = doc.data();
-              final type = (data['type'] ?? 'scheduled').toString();
-              final status = (data['status'] ?? 'draft').toString();
-              final topic = (data['topic'] ?? '').toString().trim();
-              final description = (data['description'] ?? '').toString().trim();
-              final isScheduled = type == TrainingType.scheduled.name;
-              final scheduled =
-                  (data['scheduled'] as Map<String, dynamic>?) ?? {};
-              final startAt = scheduled['startAt'] as Timestamp?;
-              final endAt = scheduled['endAt'] as Timestamp?;
-              final mode = (scheduled['mode'] ?? '').toString();
-              final publishedAt =
-                  (data['publishedAt'] as Timestamp?) ??
-                  (data['createdAt'] as Timestamp?);
-              final now = DateTime.now();
-              final isCancelled = status == TrainingStatus.cancelled.name;
-              final timeBadge = _buildTimeStateBadge(
-                context,
-                startAt: startAt?.toDate(),
-                endAt: endAt?.toDate(),
-                now: now,
-              );
+          final search = _searchController.text.trim().toLowerCase();
+          final filteredDocs = docs.where((doc) {
+            final data = doc.data();
+            final type = (data['type'] ?? '').toString();
+            final status = (data['status'] ?? '').toString();
+            final title = (data['title'] ?? '').toString().toLowerCase();
+            final topic = (data['topic'] ?? '').toString().toLowerCase();
+            final matchSearch =
+                search.isEmpty ||
+                title.contains(search) ||
+                topic.contains(search);
+            final bool matchFilter;
+            switch (_combinedFilter) {
+              case 'published':
+                matchFilter = status == 'published';
+                break;
+              case 'cancelled':
+                matchFilter = status == 'cancelled';
+                break;
+              case 'scheduled':
+                matchFilter = type == 'scheduled';
+                break;
+              case 'video':
+                matchFilter = type == 'video';
+                break;
+              default:
+                matchFilter = true;
+            }
+            return matchFilter && matchSearch;
+          }).toList();
 
-              return Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.38),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: scheme.outlineVariant.withValues(alpha: 0.6),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _MetaPill(
-                      icon: isScheduled
-                          ? Icons.event_available_outlined
-                          : Icons.ondemand_video_outlined,
-                      label: isScheduled
-                          ? 'Sesión programada'
-                          : 'Contenido en línea',
+                    TextField(
+                      controller: _searchController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Buscar por titulo o tema',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchController.text.trim().isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.close),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() {});
+                                },
+                              ),
+                      ),
                     ),
                     const SizedBox(height: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            (data['title'] ?? 'Capacitacion').toString(),
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        _StatusBadge(status: status),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (isScheduled && startAt != null)
-                          _MetaPill(
-                            icon: Icons.schedule,
-                            label: _formatAdminDate(startAt.toDate()),
-                          ),
-                        if (isScheduled && mode.trim().isNotEmpty)
-                          _MetaPill(
-                            icon: mode == 'virtual'
-                                ? Icons.videocam_outlined
-                                : Icons.location_on_outlined,
-                            label: mode == 'virtual' ? 'Virtual' : 'Presencial',
-                          ),
-                        if (publishedAt != null)
-                          _MetaPill(
-                            icon: Icons.publish_outlined,
-                            label:
-                                'Publicado: ${DateFormat('dd/MM/yyyy').format(publishedAt.toDate())}',
-                          ),
-                        if (timeBadge != null) timeBadge,
-                      ],
-                    ),
-                    if (topic.isNotEmpty || description.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: scheme.surface.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: scheme.outlineVariant.withValues(
-                              alpha: 0.45,
-                            ),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (topic.isNotEmpty)
-                              Text(
-                                'Tema: $topic',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: scheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            if (description.isNotEmpty) ...[
-                              if (topic.isNotEmpty) const SizedBox(height: 6),
-                              Text(
-                                description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (isScheduled) ...[
-                      const SizedBox(height: 12),
-                      _ScheduledStatsPanel(trainingRef: doc.reference),
-                    ],
-                    const SizedBox(height: 14),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: scheme.surface.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: scheme.outlineVariant.withValues(alpha: 0.4),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
                         children: [
                           Text(
-                            'Acciones de gestión',
-                            style: Theme.of(context).textTheme.labelLarge
+                            'Filtro:',
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
-                                  fontWeight: FontWeight.w700,
                                   color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
                                 ),
                           ),
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () =>
-                                    _openForm(editId: doc.id, editData: data),
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                label: const Text('Editar'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => _showResponses(doc.id),
-                                icon: const Icon(
-                                  Icons.people_outline,
-                                  size: 18,
-                                ),
-                                label: const Text('Confirmaciones'),
-                              ),
-                              if (isScheduled)
-                                OutlinedButton.icon(
-                                  onPressed: isCancelled
-                                      ? null
-                                      : () => _showAttendance(doc.id),
-                                  icon: const Icon(
-                                    Icons.fact_check_outlined,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Asistencia'),
-                                ),
-                              if (status != TrainingStatus.cancelled.name)
-                                OutlinedButton.icon(
-                                  onPressed: () => _cancelFromList(doc.id),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 18,
-                                  ),
-                                  label: const Text('Cancelar'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: scheme.error,
-                                    side: BorderSide(
-                                      color: scheme.error.withValues(
-                                        alpha: 0.6,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Todas'),
+                            selected: _combinedFilter == 'all',
+                            onSelected: (_) =>
+                                setState(() => _combinedFilter = 'all'),
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Publicadas'),
+                            selected: _combinedFilter == 'published',
+                            onSelected: (_) =>
+                                setState(() => _combinedFilter = 'published'),
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Canceladas'),
+                            selected: _combinedFilter == 'cancelled',
+                            onSelected: (_) =>
+                                setState(() => _combinedFilter = 'cancelled'),
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Programadas'),
+                            selected: _combinedFilter == 'scheduled',
+                            onSelected: (_) =>
+                                setState(() => _combinedFilter = 'scheduled'),
+                          ),
+                          const SizedBox(width: 8),
+                          ChoiceChip(
+                            label: const Text('Videos'),
+                            selected: _combinedFilter == 'video',
+                            onSelected: (_) =>
+                                setState(() => _combinedFilter = 'video'),
                           ),
                         ],
                       ),
                     ),
                   ],
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: filteredDocs.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.filter_alt_off_outlined,
+                                size: 48,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'No hay resultados con esos filtros',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Ajusta estado, tipo o busqueda para ver capacitaciones.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                        itemCount: filteredDocs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final doc = filteredDocs[index];
+                          final data = doc.data();
+                          final type = (data['type'] ?? 'scheduled').toString();
+                          final status = (data['status'] ?? 'published')
+                              .toString();
+                          final topic = (data['topic'] ?? '').toString().trim();
+                          final description = (data['description'] ?? '')
+                              .toString()
+                              .trim();
+                          final isScheduled =
+                              type == TrainingType.scheduled.name;
+                          final scheduled =
+                              (data['scheduled'] as Map<String, dynamic>?) ??
+                              {};
+                          final startAt = scheduled['startAt'] as Timestamp?;
+                          final endAt = scheduled['endAt'] as Timestamp?;
+                          final mode = (scheduled['mode'] ?? '').toString();
+                          final meetUrl = (scheduled['meetUrl'] ?? '')
+                              .toString()
+                              .trim();
+                          final video =
+                              (data['video'] as Map<String, dynamic>?) ?? {};
+                          final youtubeUrl = (video['youtubeUrl'] ?? '')
+                              .toString()
+                              .trim();
+                          final publishedAt =
+                              (data['publishedAt'] as Timestamp?) ??
+                              (data['createdAt'] as Timestamp?);
+                          final now = DateTime.now();
+                          final isCancelled =
+                              status == TrainingStatus.cancelled.name;
+                          final timeBadge = _buildTimeStateBadge(
+                            context,
+                            startAt: startAt?.toDate(),
+                            endAt: endAt?.toDate(),
+                            now: now,
+                          );
+
+                          return Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest.withValues(
+                                alpha: 0.38,
+                              ),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: scheme.outlineVariant.withValues(
+                                  alpha: 0.6,
+                                ),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _MetaPill(
+                                  icon: isScheduled
+                                      ? Icons.event_available_outlined
+                                      : Icons.ondemand_video_outlined,
+                                  label: isScheduled
+                                      ? 'SesiÃ³n programada'
+                                      : 'Contenido en lÃ­nea',
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        (data['title'] ?? 'Capacitacion')
+                                            .toString(),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _StatusBadge(status: status),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    if (isScheduled && startAt != null)
+                                      _MetaPill(
+                                        icon: Icons.schedule,
+                                        label: _formatAdminDate(
+                                          startAt.toDate(),
+                                        ),
+                                      ),
+                                    if (isScheduled && mode.trim().isNotEmpty)
+                                      _MetaPill(
+                                        icon: mode == 'virtual'
+                                            ? Icons.videocam_outlined
+                                            : Icons.location_on_outlined,
+                                        label: mode == 'virtual'
+                                            ? 'Virtual'
+                                            : 'Presencial',
+                                      ),
+                                    if (publishedAt != null)
+                                      _MetaPill(
+                                        icon: Icons.publish_outlined,
+                                        label:
+                                            'Publicado: ${DateFormat('dd/MM/yyyy').format(publishedAt.toDate())}',
+                                      ),
+                                    if (timeBadge != null) timeBadge,
+                                  ],
+                                ),
+                                if (topic.isNotEmpty ||
+                                    description.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surface.withValues(
+                                        alpha: 0.55,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: scheme.outlineVariant.withValues(
+                                          alpha: 0.45,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (topic.isNotEmpty)
+                                          Text(
+                                            'Tema: $topic',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      scheme.onSurfaceVariant,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        if (description.isNotEmpty) ...[
+                                          if (topic.isNotEmpty)
+                                            const SizedBox(height: 6),
+                                          Text(
+                                            description,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodyMedium,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                if (isScheduled) ...[
+                                  const SizedBox(height: 12),
+                                  _ScheduledStatsPanel(
+                                    trainingRef: doc.reference,
+                                  ),
+                                ],
+                                const SizedBox(height: 14),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: scheme.surface.withValues(
+                                      alpha: 0.45,
+                                    ),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: scheme.outlineVariant.withValues(
+                                        alpha: 0.4,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Acciones de gestiÃ³n',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          OutlinedButton.icon(
+                                            onPressed: () => _openForm(
+                                              editId: doc.id,
+                                              editData: data,
+                                            ),
+                                            icon: const Icon(
+                                              Icons.edit_outlined,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Editar'),
+                                          ),
+                                          OutlinedButton.icon(
+                                            onPressed: () => _showResponses(
+                                              trainingId: doc.id,
+                                              institutionId:
+                                                  doc
+                                                      .reference
+                                                      .parent
+                                                      .parent
+                                                      ?.id ??
+                                                  '',
+                                            ),
+                                            icon: const Icon(
+                                              Icons.people_outline,
+                                              size: 18,
+                                            ),
+                                            label: const Text('Confirmaciones'),
+                                          ),
+                                          if (isScheduled)
+                                            OutlinedButton.icon(
+                                              onPressed: isCancelled
+                                                  ? null
+                                                  : () => _showAttendance(
+                                                      trainingId: doc.id,
+                                                      institutionId:
+                                                          doc
+                                                              .reference
+                                                              .parent
+                                                              .parent
+                                                              ?.id ??
+                                                          '',
+                                                    ),
+                                              icon: const Icon(
+                                                Icons.fact_check_outlined,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Asistencia'),
+                                            ),
+                                          if (isScheduled && meetUrl.isNotEmpty)
+                                            OutlinedButton.icon(
+                                              onPressed: isCancelled
+                                                  ? null
+                                                  : () => _openMeetingLink(
+                                                      meetUrl,
+                                                    ),
+                                              icon: const Icon(
+                                                Icons.open_in_new_rounded,
+                                                size: 18,
+                                              ),
+                                              label: const Text(
+                                                'Abrir reuniÃ³n',
+                                              ),
+                                            ),
+                                          if (!isScheduled &&
+                                              youtubeUrl.isNotEmpty)
+                                            OutlinedButton.icon(
+                                              onPressed: isCancelled
+                                                  ? null
+                                                  : () => _openVideoLink(
+                                                      youtubeUrl,
+                                                    ),
+                                              icon: const Icon(
+                                                Icons.ondemand_video_outlined,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Abrir video'),
+                                            ),
+                                          if (status !=
+                                              TrainingStatus.cancelled.name)
+                                            OutlinedButton.icon(
+                                              onPressed: () =>
+                                                  _cancelFromList(doc.id),
+                                              icon: const Icon(
+                                                Icons.delete_outline,
+                                                size: 18,
+                                              ),
+                                              label: const Text('Cancelar'),
+                                              style: OutlinedButton.styleFrom(
+                                                foregroundColor: scheme.error,
+                                                side: BorderSide(
+                                                  color: scheme.error
+                                                      .withValues(alpha: 0.6),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add),
-        label: const Text('Crear capacitación'),
+        label: const Text('Crear capacitaciÃ³n'),
       ),
     );
   }
@@ -327,16 +580,10 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
     );
   }
 
-  Future<void> _showResponses(String trainingId) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) =>
-          _ResponsesSheet(service: _service, trainingId: trainingId),
-    );
-  }
-
-  Future<void> _showAttendance(String trainingId) async {
+  Future<void> _showResponses({
+    required String trainingId,
+    required String institutionId,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (!mounted) return;
@@ -345,9 +592,51 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       ).showSnackBar(const SnackBar(content: Text('No hay sesion activa.')));
       return;
     }
-    final institutionId =
-        (await _userService.getUserInstitutionId(user.uid)) ?? '';
-    if (institutionId.trim().isEmpty) {
+    String effectiveInstitutionId = institutionId.trim();
+    if (effectiveInstitutionId.isEmpty) {
+      effectiveInstitutionId =
+          ((await _userService.getUserInstitutionId(user.uid)) ?? '').trim();
+    }
+    if (effectiveInstitutionId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se encontro institutionId del admin.'),
+        ),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _buildTrainingBottomSheet(
+        _ResponsesSheet(
+          trainingId: trainingId,
+          institutionId: effectiveInstitutionId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAttendance({
+    required String trainingId,
+    required String institutionId,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('No hay sesion activa.')));
+      return;
+    }
+    String effectiveInstitutionId = institutionId.trim();
+    if (effectiveInstitutionId.isEmpty) {
+      effectiveInstitutionId =
+          ((await _userService.getUserInstitutionId(user.uid)) ?? '').trim();
+    }
+    if (effectiveInstitutionId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -361,12 +650,78 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _AttendanceSheet(
-        service: _service,
-        trainingId: trainingId,
-        institutionId: institutionId,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _buildTrainingBottomSheet(
+        _AttendanceSheet(
+          trainingId: trainingId,
+          institutionId: effectiveInstitutionId,
+        ),
       ),
     );
+  }
+
+  Widget _buildTrainingBottomSheet(Widget child) {
+    final scheme = Theme.of(context).colorScheme;
+    return FractionallySizedBox(
+      heightFactor: 0.86,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+        child: Material(color: scheme.surface, child: child),
+      ),
+    );
+  }
+
+  Uri? _normalizeExternalUri(String raw) {
+    final clean = raw.trim();
+    if (clean.isEmpty) return null;
+    Uri? uri = Uri.tryParse(clean);
+    if (uri == null) return null;
+    if (!uri.hasScheme || uri.host.isEmpty) {
+      uri = Uri.tryParse(
+        clean.startsWith('//') ? 'https:$clean' : 'https://$clean',
+      );
+    }
+    if (uri == null || uri.host.isEmpty) return null;
+    return uri;
+  }
+
+  Future<void> _openMeetingLink(String rawUrl) async {
+    final uri = _normalizeExternalUri(rawUrl);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enlace de reuniÃ³n invÃ¡lido.')),
+      );
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el enlace de reuniÃ³n.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openVideoLink(String rawUrl) async {
+    final uri = _normalizeExternalUri(rawUrl);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('URL de video invalida.')));
+      return;
+    }
+    var ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) {
+      ok = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    }
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo abrir el video.')),
+      );
+    }
   }
 
   Future<void> _diagnoseNotificationSetup() async {
@@ -388,6 +743,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
     final myTokens = List<String>.from(data['fcmTokens'] ?? const []);
 
     int institutionUsers = 0;
+    int eligibleUsers = 0;
     int usersWithTokens = 0;
     int institutionTokens = 0;
     int publishedTrainings = 0;
@@ -396,11 +752,22 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       final usersSnap = await FirebaseFirestore.instance
           .collection('users')
           .where('institutionId', isEqualTo: institutionId)
-          .where('notificationsEnabled', isEqualTo: true)
           .get();
       institutionUsers = usersSnap.size;
+      const allowedRoles = {'user', 'employee'};
       for (final doc in usersSnap.docs) {
-        final tokens = List<String>.from(doc.data()['fcmTokens'] ?? const []);
+        final userData = doc.data();
+        final role = (userData['role'] ?? '').toString().trim();
+        if (!allowedRoles.contains(role)) {
+          continue;
+        }
+        final notificationsEnabled =
+            (userData['notificationsEnabled'] as bool?) ?? true;
+        if (!notificationsEnabled) {
+          continue;
+        }
+        eligibleUsers++;
+        final tokens = List<String>.from(userData['fcmTokens'] ?? const []);
         if (tokens.isNotEmpty) {
           usersWithTokens++;
           institutionTokens += tokens.length;
@@ -422,7 +789,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       '[Notifications][diagnostic] myNotificationsEnabled=$notificationsEnabled myTokens=${myTokens.length}',
     );
     debugPrint(
-      '[Notifications][diagnostic] institutionUsersEnabled=$institutionUsers usersWithTokens=$usersWithTokens totalTokens=$institutionTokens',
+      '[Notifications][diagnostic] institutionUsers=$institutionUsers eligibleUsers=$eligibleUsers usersWithTokens=$usersWithTokens totalTokens=$institutionTokens',
     );
     debugPrint(
       '[Notifications][diagnostic] publishedTrainings=$publishedTrainings',
@@ -443,9 +810,10 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
                 Text('Tu switch de notificaciones: $notificationsEnabled'),
                 Text('Tus tokens FCM: ${myTokens.length}'),
                 const SizedBox(height: 8),
-                Text('Usuarios habilitados (institución): $institutionUsers'),
+                Text('Usuarios en la institucion: $institutionUsers'),
+                Text('Usuarios objetivo (user/employee): $eligibleUsers'),
                 Text('Usuarios con token: $usersWithTokens'),
-                Text('Tokens totales en institución: $institutionTokens'),
+                Text('Tokens totales en institucion: $institutionTokens'),
                 Text('Capacitaciones publicadas: $publishedTrainings'),
                 const SizedBox(height: 10),
                 const Text(
@@ -503,7 +871,7 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Cancelar capacitación'),
+          title: const Text('Cancelar capacitaciÃ³n'),
           content: const Text(
             'Se marcara como cancelada y se notificara a los usuarios.',
           ),
@@ -584,11 +952,11 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
   String _formatAdminDate(DateTime value) {
     final now = DateTime.now();
     if (_isSameDay(value, now)) {
-      return 'Hoy ${DateFormat('HH:mm').format(value)}';
+      return 'Hoy ${DateFormat('hh:mm a').format(value)}';
     }
     final tomorrow = now.add(const Duration(days: 1));
     if (_isSameDay(value, tomorrow)) {
-      return 'Manana ${DateFormat('HH:mm').format(value)}';
+      return 'Manana ${DateFormat('hh:mm a').format(value)}';
     }
     return _dateFormat.format(value);
   }
@@ -646,7 +1014,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
   final _duration = TextEditingController();
 
   String _type = TrainingType.scheduled.name;
-  String _status = TrainingStatus.draft.name;
+  String _status = TrainingStatus.published.name;
   String _mode = 'presencial';
   bool _requireRsvp = true;
   DateTime _startAt = DateTime.now().add(const Duration(days: 1));
@@ -703,15 +1071,48 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
     return false;
   }
 
+  Uri? _normalizeExternalUri(String raw) {
+    final clean = raw.trim();
+    if (clean.isEmpty) return null;
+    Uri? uri = Uri.tryParse(clean);
+    if (uri == null) return null;
+    if (!uri.hasScheme || uri.host.isEmpty) {
+      uri = Uri.tryParse(
+        clean.startsWith('//') ? 'https:$clean' : 'https://$clean',
+      );
+    }
+    if (uri == null || uri.host.isEmpty) return null;
+    return uri;
+  }
+
+  Future<void> _openMeetingPreviewLink() async {
+    final uri = _normalizeExternalUri(_meetUrl.text);
+    if (uri == null || !_isMeetingUrlValid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enlace de reuniÃ³n invÃ¡lido.')),
+      );
+      return;
+    }
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo abrir el enlace de reuniÃ³n.'),
+        ),
+      );
+    }
+  }
+
   String? get _disabledMessage {
     if (_isCancelledTraining) {
-      return 'La capacitación fue cancelada y no admite cambios.';
+      return 'La capacitaciÃ³n fue cancelada y no admite cambios.';
     }
     if (_saving) return null;
     if (_title.text.trim().isEmpty) return 'Agrega un titulo para continuar.';
     if (_desc.text.trim().isEmpty) return 'Agrega una descripcion breve.';
     if (_topic.text.trim().isEmpty) {
-      return 'Agrega un tema para la capacitación.';
+      return 'Agrega un tema para la capacitaciÃ³n.';
     }
     if (_type == TrainingType.scheduled.name) {
       if (!_isRangeValid) {
@@ -721,10 +1122,10 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         return 'Indica el lugar para la modalidad presencial.';
       }
       if (_mode == 'virtual' && _meetUrl.text.trim().isEmpty) {
-        return 'Ingresa el enlace de reunión para modalidad virtual.';
+        return 'Ingresa el enlace de reuniÃ³n para modalidad virtual.';
       }
       if (_mode == 'virtual' && !_isMeetingUrlValid) {
-        return 'Usa un enlace válido de reunión (Meet, Zoom, Teams, Webex o Jitsi).';
+        return 'Usa un enlace vÃ¡lido de reuniÃ³n (Meet, Zoom, Teams, Webex o Jitsi).';
       }
       return null;
     }
@@ -868,14 +1269,14 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Nueva capacitación',
+            'Nueva capacitaciÃ³n',
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            'Configura una capacitación SST para tu institución',
+            'Configura una capacitaciÃ³n SST para tu instituciÃ³n',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -947,9 +1348,8 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       if (rawStatus == TrainingStatus.cancelled.name) {
         _status = TrainingStatus.cancelled.name;
         _isCancelledTraining = true;
-      } else if (rawStatus == TrainingStatus.published.name ||
-          rawStatus == TrainingStatus.draft.name) {
-        _status = rawStatus;
+      } else {
+        _status = TrainingStatus.published.name;
       }
       _title.text = (data['title'] ?? '').toString();
       _desc.text = (data['description'] ?? '').toString();
@@ -989,7 +1389,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Nueva capacitación')),
+      appBar: AppBar(title: const Text('Nueva capacitaciÃ³n')),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -1009,7 +1409,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
               _buildSection(
                 context,
                 title: 'Informacion basica',
-                subtitle: 'Define los datos generales de la capacitación.',
+                subtitle: 'Define los datos generales de la capacitaciÃ³n.',
                 icon: Icons.assignment_outlined,
                 children: [
                   DropdownButtonFormField<String>(
@@ -1025,31 +1425,6 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                     onChanged: (value) {
                       if (value != null) setState(() => _type = value);
                     },
-                  ),
-                  _space(),
-                  DropdownButtonFormField<String>(
-                    initialValue: _status,
-                    decoration: _fieldDecoration(context, label: 'Estado *'),
-                    items: [
-                      DropdownMenuItem(
-                        value: TrainingStatus.draft.name,
-                        child: const Text('Borrador'),
-                      ),
-                      DropdownMenuItem(
-                        value: TrainingStatus.published.name,
-                        child: const Text('Publicado'),
-                      ),
-                      if (_isCancelledTraining)
-                        const DropdownMenuItem(
-                          value: 'cancelled',
-                          child: Text('Cancelada'),
-                        ),
-                    ],
-                    onChanged: _isCancelledTraining
-                        ? null
-                        : (value) {
-                            if (value != null) setState(() => _status = value);
-                          },
                   ),
                   _space(),
                   TextFormField(
@@ -1139,6 +1514,9 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                     _DateTimeField(
                       label: 'Fin *',
                       value: _endAt,
+                      minDateTime: _startAt,
+                      minErrorMessage:
+                          'La fecha/hora de fin debe ser posterior al inicio.',
                       onChanged: (value) => setState(() => _endAt = value),
                     ),
                     if (!_isRangeValid)
@@ -1192,24 +1570,39 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                         onChanged: (_) => setState(() {}),
                         decoration: _fieldDecoration(
                           context,
-                          label: 'Enlace de reunión *',
+                          label: 'Enlace de reuniÃ³n *',
                           hint:
                               'https://meet.google.com/... o enlace de Zoom/Teams',
                         ),
                         validator: (v) {
                           if (_mode == 'virtual' &&
                               (v == null || v.trim().isEmpty)) {
-                            return 'La URL de reunión es obligatoria en modalidad virtual.';
+                            return 'La URL de reuniÃ³n es obligatoria en modalidad virtual.';
                           }
                           if (_mode == 'virtual' &&
                               v != null &&
                               v.trim().isNotEmpty &&
                               !_isMeetingUrlValid) {
-                            return 'Usa un enlace válido de reunión (Meet, Zoom, Teams, Webex o Jitsi).';
+                            return 'Usa un enlace vÃ¡lido de reuniÃ³n (Meet, Zoom, Teams, Webex o Jitsi).';
                           }
                           return null;
                         },
                       ),
+                    if (_mode == 'virtual') ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              (_meetUrl.text.trim().isEmpty ||
+                                  !_isMeetingUrlValid)
+                              ? null
+                              : _openMeetingPreviewLink,
+                          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                          label: const Text('Abrir enlace'),
+                        ),
+                      ),
+                    ],
                     _space(),
                     TextFormField(
                       controller: _capacity,
@@ -1243,7 +1636,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                           height: 20,
                           child: CircularProgressIndicator(),
                         )
-                      : const Text('Guardar capacitación'),
+                      : const Text('Guardar capacitaciÃ³n'),
                 ),
               ),
               if (_isEditing && !_isCancelledTraining) ...[
@@ -1269,7 +1662,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.cancel_outlined),
-                    label: const Text('Cancelar capacitación'),
+                    label: const Text('Cancelar capacitaciÃ³n'),
                   ),
                 ),
               ],
@@ -1327,17 +1720,21 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
 
     setState(() => _saving = true);
     try {
+      final String saveStatus = _isCancelledTraining
+          ? TrainingStatus.cancelled.name
+          : TrainingStatus.published.name;
       final Map<String, dynamic> base = {
         'type': _type,
         'title': _title.text.trim(),
         'description': _desc.text.trim(),
         'topic': _topic.text.trim(),
-        'status': _status,
+        'status': saveStatus,
       };
       final previousStatus =
-          (widget.editData?['status'] ?? TrainingStatus.draft.name).toString();
+          (widget.editData?['status'] ?? TrainingStatus.published.name)
+              .toString();
       final existingPublishedAt = widget.editData?['publishedAt'];
-      if (_status == TrainingStatus.published.name &&
+      if (saveStatus == TrainingStatus.published.name &&
           previousStatus != TrainingStatus.published.name &&
           existingPublishedAt == null) {
         base['publishedAt'] = FieldValue.serverTimestamp();
@@ -1369,15 +1766,15 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       );
 
       if (widget.editId == null) {
-        // createdBy lo añade el servicio con el uid autenticado.
+        // createdBy lo aÃ±ade el servicio con el uid autenticado.
         final model = TrainingModuleModel(
           type: _type,
           title: _title.text.trim(),
           description: _desc.text.trim(),
           topic: _topic.text.trim(),
           createdBy: '',
-          status: _status,
-          publishedAt: _status == TrainingStatus.published.name
+          status: saveStatus,
+          publishedAt: saveStatus == TrainingStatus.published.name
               ? FieldValue.serverTimestamp()
               : null,
           scheduled: _type == TrainingType.scheduled.name
@@ -1405,12 +1802,16 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
 
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Capacitacion guardada.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Capacitacion publicada. Ya es visible para usuarios de la institucion.',
+          ),
+        ),
+      );
     } on FirebaseException catch (e, st) {
       debugPrint(
-        'Error Firebase guardando capacitación: ${e.code} ${e.message}',
+        'Error Firebase guardando capacitaciÃ³n: ${e.code} ${e.message}',
       );
       debugPrint(st.toString());
       if (!mounted) return;
@@ -1420,7 +1821,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         SnackBar(content: Text('No se pudo guardar ($code): $message')),
       );
     } catch (e, st) {
-      debugPrint('Error guardando capacitación: $e');
+      debugPrint('Error guardando capacitaciÃ³n: $e');
       debugPrint(st.toString());
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1437,9 +1838,9 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Cancelar capacitación'),
+          title: const Text('Cancelar capacitaciÃ³n'),
           content: const Text(
-            'Esta acción marcará la capacitación como cancelada y notificará a usuarios.',
+            'Esta acciÃ³n marcarÃ¡ la capacitaciÃ³n como cancelada y notificarÃ¡ a usuarios.',
           ),
           actions: [
             TextButton(
@@ -1483,7 +1884,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
       ).showSnackBar(const SnackBar(content: Text('Capacitacion cancelada.')));
     } on FirebaseException catch (e, st) {
       debugPrint(
-        'Error Firebase cancelando capacitación: ${e.code} ${e.message}',
+        'Error Firebase cancelando capacitaciÃ³n: ${e.code} ${e.message}',
       );
       debugPrint(st.toString());
       if (!mounted) return;
@@ -1493,7 +1894,7 @@ class _TrainingFormScreenState extends State<_TrainingFormScreen> {
         SnackBar(content: Text('No se pudo cancelar ($code): $message')),
       );
     } catch (e, st) {
-      debugPrint('Error cancelando capacitación: $e');
+      debugPrint('Error cancelando capacitaciÃ³n: $e');
       debugPrint(st.toString());
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -1781,29 +2182,98 @@ class _MetaPill extends StatelessWidget {
   }
 }
 
-class _ResponsesSheet extends StatelessWidget {
-  final TrainingService service;
+class _ResponsesSheet extends StatefulWidget {
   final String trainingId;
-  const _ResponsesSheet({required this.service, required this.trainingId});
+  final String institutionId;
+  const _ResponsesSheet({
+    required this.trainingId,
+    required this.institutionId,
+  });
+
+  @override
+  State<_ResponsesSheet> createState() => _ResponsesSheetState();
+}
+
+class _ResponsesSheetState extends State<_ResponsesSheet> {
+  late final DocumentReference<Map<String, dynamic>> _trainingRef;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _responsesStream;
+  Future<Map<String, _AttendanceUserInfo>>? _userInfoFuture;
+  Set<String> _userInfoIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _trainingRef = FirebaseFirestore.instance
+        .collection('institutions')
+        .doc(widget.institutionId)
+        .collection('trainings')
+        .doc(widget.trainingId);
+    _responsesStream = _trainingRef.collection('responses').snapshots();
+  }
+
+  Future<Map<String, _AttendanceUserInfo>> _getUserInfoFuture(
+    List<String> userIds,
+  ) {
+    final next = userIds.toSet();
+    if (_userInfoFuture == null || !_sameIds(_userInfoIds, next)) {
+      _userInfoIds = next;
+      _userInfoFuture = _loadUserInfo(userIds);
+    }
+    return _userInfoFuture!;
+  }
+
+  bool _sameIds(Set<String> a, Set<String> b) {
+    if (a.length != b.length) return false;
+    for (final id in a) {
+      if (!b.contains(id)) return false;
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final height = MediaQuery.of(context).size.height * 0.78;
     return SafeArea(
-      child: SizedBox(
-        height: height,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: service.streamResponsesForTraining(trainingId),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final docs = snapshot.data?.docs ?? const [];
-              if (docs.isEmpty) {
-                return Column(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _responsesStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    'No se pudieron cargar las confirmaciones.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: scheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              );
+            }
+            final docs =
+                List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+                  snapshot.data?.docs ?? const [],
+                )..sort((a, b) {
+                  final aTs = a.data()['respondedAt'] as Timestamp?;
+                  final bTs = b.data()['respondedAt'] as Timestamp?;
+                  final aDate =
+                      aTs?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+                  final bDate =
+                      bTs?.toDate() ?? DateTime.fromMillisecondsSinceEpoch(0);
+                  return bDate.compareTo(aDate);
+                });
+            if (docs.isEmpty) {
+              return Center(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
@@ -1813,7 +2283,7 @@ class _ResponsesSheet extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Aún no hay confirmaciones',
+                      'Aun no hay confirmaciones',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -1827,112 +2297,146 @@ class _ResponsesSheet extends StatelessWidget {
                       ),
                     ),
                   ],
-                );
-              }
+                ),
+              );
+            }
 
-              final userIds = docs
-                  .map((doc) => (doc.data()['userId'] ?? '').toString())
-                  .where((id) => id.trim().isNotEmpty)
-                  .toSet()
-                  .toList();
+            final userIds = docs
+                .map((doc) => (doc.data()['userId'] ?? '').toString())
+                .where((id) => id.trim().isNotEmpty)
+                .toSet()
+                .toList();
 
-              return FutureBuilder<Map<String, _AttendanceUserInfo>>(
-                future: _loadUserInfo(userIds),
-                builder: (context, userSnap) {
-                  if (userSnap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final usersMap = userSnap.data ?? {};
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Confirmaciones',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+            return FutureBuilder<Map<String, _AttendanceUserInfo>>(
+              future: _getUserInfoFuture(userIds),
+              builder: (context, userSnap) {
+                final usersMap = userSnap.data ?? {};
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Confirmaciones',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Listado de respuestas de asistencia.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (userSnap.hasError) ...[
                       const SizedBox(height: 6),
                       Text(
-                        'Listado de respuestas de asistencia.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                        'No se pudieron cargar todos los perfiles. Mostrando datos basicos.',
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelSmall?.copyWith(color: scheme.error),
                       ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: docs.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 10),
-                          itemBuilder: (_, index) {
-                            final data = docs[index].data();
-                            final userId = (data['userId'] ?? '').toString();
-                            final user = usersMap[userId];
-                            final fallbackName = (data['userName'] ?? '')
-                                .toString()
-                                .trim();
-                            final fallbackEmail = (data['userEmail'] ?? '')
-                                .toString()
-                                .trim();
-                            final comment = (data['comment'] ?? '')
-                                .toString()
-                                .trim();
-                            final respondedAt =
-                                data['respondedAt'] as Timestamp?;
-                            return Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: scheme.surface.withValues(alpha: 0.58),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: scheme.outlineVariant.withValues(
-                                    alpha: 0.55,
-                                  ),
+                    ],
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: docs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, index) {
+                          final data = docs[index].data();
+                          final userId = (data['userId'] ?? '').toString();
+                          final user = usersMap[userId];
+                          final fallbackName = (data['userName'] ?? '')
+                              .toString()
+                              .trim();
+                          final fallbackEmail = (data['userEmail'] ?? '')
+                              .toString()
+                              .trim();
+                          final comment = (data['comment'] ?? '')
+                              .toString()
+                              .trim();
+                          final respondedAt = data['respondedAt'] as Timestamp?;
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: scheme.surface.withValues(alpha: 0.58),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: scheme.outlineVariant.withValues(
+                                  alpha: 0.55,
                                 ),
                               ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: scheme.primary.withValues(
-                                      alpha: 0.14,
-                                    ),
-                                    child: Text(
-                                      _initials(user?.name, user?.email),
-                                      style: TextStyle(
-                                        color: scheme.primary,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: scheme.primary.withValues(
+                                    alpha: 0.14,
+                                  ),
+                                  child: Text(
+                                    _initials(user?.name, user?.email),
+                                    style: TextStyle(
+                                      color: scheme.primary,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        user?.name.isNotEmpty == true
+                                            ? user!.name
+                                            : fallbackName.isNotEmpty
+                                            ? fallbackName
+                                            : 'Usuario',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        user?.email.isNotEmpty == true
+                                            ? user!.email
+                                            : fallbackEmail.isNotEmpty
+                                            ? fallbackEmail
+                                            : userId,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      _ResponsePill(
+                                        label: _labelResponse(
+                                          (data['response'] ?? '').toString(),
+                                        ),
+                                      ),
+                                      if (respondedAt != null) ...[
+                                        const SizedBox(height: 4),
                                         Text(
-                                          user?.name.isNotEmpty == true
-                                              ? user!.name
-                                              : fallbackName.isNotEmpty
-                                              ? fallbackName
-                                              : 'Usuario',
+                                          'Respondio: ${DateFormat('dd/MM/yyyy hh:mm a').format(respondedAt.toDate())}',
                                           style: Theme.of(context)
                                               .textTheme
-                                              .bodyMedium
+                                              .labelSmall
                                               ?.copyWith(
-                                                fontWeight: FontWeight.w700,
+                                                color: scheme.onSurfaceVariant,
                                               ),
                                         ),
-                                        const SizedBox(height: 2),
+                                      ],
+                                      if (comment.isNotEmpty) ...[
+                                        const SizedBox(height: 4),
                                         Text(
-                                          user?.email.isNotEmpty == true
-                                              ? user!.email
-                                              : fallbackEmail.isNotEmpty
-                                              ? fallbackEmail
-                                              : userId,
+                                          comment,
                                           style: Theme.of(context)
                                               .textTheme
                                               .bodySmall
@@ -1940,53 +2444,21 @@ class _ResponsesSheet extends StatelessWidget {
                                                 color: scheme.onSurfaceVariant,
                                               ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        _ResponsePill(
-                                          label: _labelResponse(
-                                            (data['response'] ?? '').toString(),
-                                          ),
-                                        ),
-                                        if (respondedAt != null) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            'Respondio: ${DateFormat('dd/MM/yyyy HH:mm').format(respondedAt.toDate())}',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .labelSmall
-                                                ?.copyWith(
-                                                  color:
-                                                      scheme.onSurfaceVariant,
-                                                ),
-                                          ),
-                                        ],
-                                        if (comment.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            comment,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  color:
-                                                      scheme.onSurfaceVariant,
-                                                ),
-                                          ),
-                                        ],
                                       ],
-                                    ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  );
-                },
-              );
-            },
-          ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         ),
       ),
     );
@@ -1998,15 +2470,34 @@ class _ResponsesSheet extends StatelessWidget {
     if (userIds.isEmpty) return {};
     final result = <String, _AttendanceUserInfo>{};
     const chunkSize = 10;
+    final chunks = <List<String>>[];
     for (int i = 0; i < userIds.length; i += chunkSize) {
-      final chunk = userIds.sublist(
-        i,
-        i + chunkSize > userIds.length ? userIds.length : i + chunkSize,
+      chunks.add(
+        userIds.sublist(
+          i,
+          i + chunkSize > userIds.length ? userIds.length : i + chunkSize,
+        ),
       );
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
+    }
+    final snapshots = await Future.wait(
+      chunks.map((chunk) async {
+        try {
+          return await FirebaseFirestore.instance
+              .collection('users')
+              .where(FieldPath.documentId, whereIn: chunk)
+              .get()
+              .timeout(const Duration(seconds: 8));
+        } on TimeoutException {
+          return null;
+        } on FirebaseException {
+          return null;
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+    for (final snap
+        in snapshots.whereType<QuerySnapshot<Map<String, dynamic>>>()) {
       for (final doc in snap.docs) {
         final data = doc.data();
         result[doc.id] = _AttendanceUserInfo(
@@ -2044,7 +2535,7 @@ class _ResponsesSheet extends StatelessWidget {
       case 'maybe':
         return 'Quizas';
       default:
-        return value;
+        return value.isEmpty ? 'Sin respuesta' : value;
     }
   }
 }
@@ -2079,11 +2570,9 @@ class _ResponsePill extends StatelessWidget {
 }
 
 class _AttendanceSheet extends StatefulWidget {
-  final TrainingService service;
   final String trainingId;
   final String institutionId;
   const _AttendanceSheet({
-    required this.service,
     required this.trainingId,
     required this.institutionId,
   });
@@ -2095,41 +2584,114 @@ class _AttendanceSheet extends StatefulWidget {
 class _AttendanceSheetState extends State<_AttendanceSheet> {
   final Map<String, bool> _pendingChanges = {};
   final Set<String> _savingUsers = {};
+  Future<Map<String, _AttendanceUserInfo>>? _userInfoFuture;
+  Set<String> _userInfoIds = <String>{};
+  late final DocumentReference<Map<String, dynamic>> _trainingRef;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _responsesStream;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _attendanceStream;
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final height = MediaQuery.of(context).size.height * 0.82;
-    final trainingRef = FirebaseFirestore.instance
+  void initState() {
+    super.initState();
+    _trainingRef = FirebaseFirestore.instance
         .collection('institutions')
         .doc(widget.institutionId)
         .collection('trainings')
         .doc(widget.trainingId);
+    _responsesStream = _trainingRef.collection('responses').snapshots();
+    _attendanceStream = _trainingRef.collection('attendance').snapshots();
+  }
+
+  Future<Map<String, _AttendanceUserInfo>> _getUserInfoFuture(
+    List<String> userIds,
+  ) {
+    final next = userIds.toSet();
+    if (_userInfoFuture == null || !_sameIds(_userInfoIds, next)) {
+      _userInfoIds = next;
+      _userInfoFuture = _loadUserInfo(userIds);
+    }
+    return _userInfoFuture!;
+  }
+
+  bool _sameIds(Set<String> a, Set<String> b) {
+    if (a.length != b.length) return false;
+    for (final id in a) {
+      if (!b.contains(id)) return false;
+    }
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return SafeArea(
-      child: SizedBox(
-        height: height,
-        child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: trainingRef.snapshots(),
-          builder: (context, trainingSnap) {
-            if (trainingSnap.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final trainingStatus = (trainingSnap.data?.data()?['status'] ?? '')
-                .toString();
-            final isCancelled = trainingStatus == TrainingStatus.cancelled.name;
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: widget.service.streamResponsesForTraining(
-                  widget.trainingId,
+      top: false,
+      child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: _trainingRef.snapshots(),
+        builder: (context, trainingSnap) {
+          if (trainingSnap.connectionState == ConnectionState.waiting &&
+              !trainingSnap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (trainingSnap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'No se pudo cargar el detalle de la capacitacion.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: scheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                builder: (context, responseSnap) {
-                  if (responseSnap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final responseDocs = responseSnap.data?.docs ?? [];
-                  if (responseDocs.isEmpty) {
-                    return Column(
+              ),
+            );
+          }
+          final trainingStatus = (trainingSnap.data?.data()?['status'] ?? '')
+              .toString();
+          final isCancelled = trainingStatus == TrainingStatus.cancelled.name;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _responsesStream,
+              builder: (context, responseSnap) {
+                if (responseSnap.connectionState == ConnectionState.waiting &&
+                    !responseSnap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (responseSnap.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'No se pudieron cargar las confirmaciones.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                final responseDocs =
+                    List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(
+                      responseSnap.data?.docs ?? const [],
+                    )..sort((a, b) {
+                      final aTs = a.data()['respondedAt'] as Timestamp?;
+                      final bTs = b.data()['respondedAt'] as Timestamp?;
+                      final aDate =
+                          aTs?.toDate() ??
+                          DateTime.fromMillisecondsSinceEpoch(0);
+                      final bDate =
+                          bTs?.toDate() ??
+                          DateTime.fromMillisecondsSinceEpoch(0);
+                      return bDate.compareTo(aDate);
+                    });
+                if (responseDocs.isEmpty) {
+                  return Center(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
@@ -2139,7 +2701,7 @@ class _AttendanceSheetState extends State<_AttendanceSheet> {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          'Aún no hay confirmaciones',
+                          'AÃºn no hay confirmaciones',
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
@@ -2151,234 +2713,251 @@ class _AttendanceSheetState extends State<_AttendanceSheet> {
                               ?.copyWith(color: scheme.onSurfaceVariant),
                         ),
                       ],
-                    );
-                  }
+                    ),
+                  );
+                }
 
-                  final userIds = responseDocs
-                      .map((e) => (e.data()['userId'] ?? '').toString())
-                      .where((id) => id.trim().isNotEmpty)
-                      .toSet()
-                      .toList();
+                final userIds = responseDocs
+                    .map((e) => (e.data()['userId'] ?? '').toString())
+                    .where((id) => id.trim().isNotEmpty)
+                    .toSet()
+                    .toList();
 
-                  return FutureBuilder<Map<String, _AttendanceUserInfo>>(
-                    future: _loadUserInfo(userIds),
-                    builder: (context, userSnap) {
-                      if (userSnap.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      final usersMap = userSnap.data ?? {};
+                return FutureBuilder<Map<String, _AttendanceUserInfo>>(
+                  future: _getUserInfoFuture(userIds),
+                  builder: (context, userSnap) {
+                    final usersMap = userSnap.data ?? {};
 
-                      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: trainingRef
-                            .collection('attendance')
-                            .snapshots(),
-                        builder: (context, attendanceSnap) {
-                          final attendanceDocs =
-                              attendanceSnap.data?.docs ?? [];
-                          final attendanceMap = <String, bool>{};
-                          for (final doc in attendanceDocs) {
-                            final map = doc.data();
-                            attendanceMap[doc.id] = map['attended'] == true;
-                          }
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _attendanceStream,
+                      builder: (context, attendanceSnap) {
+                        final attendanceLoading =
+                            attendanceSnap.connectionState ==
+                                ConnectionState.waiting &&
+                            !attendanceSnap.hasData;
+                        final attendanceError = attendanceSnap.hasError;
+                        final attendanceDocs = attendanceSnap.data?.docs ?? [];
+                        final attendanceMap = <String, bool>{};
+                        for (final doc in attendanceDocs) {
+                          final map = doc.data();
+                          attendanceMap[doc.id] = map['attended'] == true;
+                        }
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Asistencia',
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(fontWeight: FontWeight.w800),
-                              ),
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Asistencia',
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            if (attendanceLoading) ...[
+                              const SizedBox(height: 6),
+                              const LinearProgressIndicator(minHeight: 2),
+                            ],
+                            const SizedBox(height: 6),
+                            Text(
+                              'Marca si cada usuario asistio o no asistio.',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                            if (attendanceError) ...[
                               const SizedBox(height: 6),
                               Text(
-                                'Marca si cada usuario asistio o no asistio.',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                                'No se pudo cargar asistencia previa. Puedes registrar asistencia nuevamente.',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: scheme.error),
                               ),
-                              if (isCancelled) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Capacitacion cancelada: la asistencia esta bloqueada.',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(color: scheme.error),
-                                ),
-                              ],
-                              const SizedBox(height: 14),
-                              Expanded(
-                                child: ListView.separated(
-                                  itemCount: responseDocs.length,
-                                  separatorBuilder: (_, __) =>
-                                      const SizedBox(height: 10),
-                                  itemBuilder: (_, index) {
-                                    final responseData = responseDocs[index]
-                                        .data();
-                                    final userId =
-                                        (responseData['userId'] ?? '')
-                                            .toString();
-                                    final fallbackName =
-                                        (responseData['userName'] ?? '')
-                                            .toString()
-                                            .trim();
-                                    final fallbackEmail =
-                                        (responseData['userEmail'] ?? '')
-                                            .toString()
-                                            .trim();
-                                    final response =
-                                        (responseData['response'] ?? '')
-                                            .toString();
-                                    final userInfo = usersMap[userId];
-                                    final currentValue =
-                                        _pendingChanges[userId] ??
-                                        attendanceMap[userId] ??
-                                        false;
-                                    final isSaving = _savingUsers.contains(
-                                      userId,
-                                    );
+                            ],
+                            if (userSnap.hasError) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'No se pudieron cargar todos los perfiles. Mostrando datos basicos.',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: scheme.error),
+                              ),
+                            ],
+                            if (isCancelled) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'Capacitacion cancelada: la asistencia esta bloqueada.',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: scheme.error),
+                              ),
+                            ],
+                            const SizedBox(height: 14),
+                            Expanded(
+                              child: ListView.separated(
+                                itemCount: responseDocs.length,
+                                separatorBuilder: (_, __) =>
+                                    const SizedBox(height: 10),
+                                itemBuilder: (_, index) {
+                                  final responseData = responseDocs[index]
+                                      .data();
+                                  final userId = (responseData['userId'] ?? '')
+                                      .toString();
+                                  final fallbackName =
+                                      (responseData['userName'] ?? '')
+                                          .toString()
+                                          .trim();
+                                  final fallbackEmail =
+                                      (responseData['userEmail'] ?? '')
+                                          .toString()
+                                          .trim();
+                                  final response =
+                                      (responseData['response'] ?? '')
+                                          .toString();
+                                  final userInfo = usersMap[userId];
+                                  final currentValue =
+                                      _pendingChanges[userId] ??
+                                      attendanceMap[userId] ??
+                                      false;
+                                  final isSaving = _savingUsers.contains(
+                                    userId,
+                                  );
 
-                                    return Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: scheme.surface.withValues(
-                                          alpha: 0.62,
-                                        ),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: scheme.outlineVariant
-                                              .withValues(alpha: 0.55),
+                                  return Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: scheme.surface.withValues(
+                                        alpha: 0.62,
+                                      ),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: scheme.outlineVariant.withValues(
+                                          alpha: 0.55,
                                         ),
                                       ),
-                                      child: Row(
-                                        children: [
-                                          CircleAvatar(
-                                            radius: 18,
-                                            backgroundColor: scheme.primary
-                                                .withValues(alpha: 0.14),
-                                            child: Text(
-                                              _initials(
-                                                userInfo?.name,
-                                                userInfo?.email,
-                                              ),
-                                              style: TextStyle(
-                                                color: scheme.primary,
-                                                fontWeight: FontWeight.w700,
-                                              ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 18,
+                                          backgroundColor: scheme.primary
+                                              .withValues(alpha: 0.14),
+                                          child: Text(
+                                            _initials(
+                                              userInfo?.name,
+                                              userInfo?.email,
+                                            ),
+                                            style: TextStyle(
+                                              color: scheme.primary,
+                                              fontWeight: FontWeight.w700,
                                             ),
                                           ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  userInfo?.name.isNotEmpty ==
-                                                          true
-                                                      ? userInfo!.name
-                                                      : fallbackName.isNotEmpty
-                                                      ? fallbackName
-                                                      : 'Usuario',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodyMedium
-                                                      ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.w700,
-                                                      ),
-                                                ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  userInfo?.email.isNotEmpty ==
-                                                          true
-                                                      ? userInfo!.email
-                                                      : fallbackEmail.isNotEmpty
-                                                      ? fallbackEmail
-                                                      : userId,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall
-                                                      ?.copyWith(
-                                                        color: scheme
-                                                            .onSurfaceVariant,
-                                                      ),
-                                                ),
-                                                const SizedBox(height: 3),
-                                                Text(
-                                                  'Confirmacion: ${_labelResponse(response)}',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .labelSmall
-                                                      ?.copyWith(
-                                                        color: scheme
-                                                            .onSurfaceVariant,
-                                                      ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Column(
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
                                             crossAxisAlignment:
-                                                CrossAxisAlignment.end,
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
-                                                currentValue
-                                                    ? 'Asistio'
-                                                    : 'No asistio',
+                                                userInfo?.name.isNotEmpty ==
+                                                        true
+                                                    ? userInfo!.name
+                                                    : fallbackName.isNotEmpty
+                                                    ? fallbackName
+                                                    : 'Usuario',
                                                 style: Theme.of(context)
                                                     .textTheme
-                                                    .labelMedium
+                                                    .bodyMedium
                                                     ?.copyWith(
-                                                      color: currentValue
-                                                          ? Colors.green
-                                                          : scheme.error,
                                                       fontWeight:
                                                           FontWeight.w700,
                                                     ),
                                               ),
-                                              isSaving
-                                                  ? const Padding(
-                                                      padding: EdgeInsets.only(
-                                                        top: 6,
-                                                      ),
-                                                      child: SizedBox(
-                                                        width: 18,
-                                                        height: 18,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                              strokeWidth: 2,
-                                                            ),
-                                                      ),
-                                                    )
-                                                  : Switch(
-                                                      value: currentValue,
-                                                      onChanged: isCancelled
-                                                          ? null
-                                                          : (
-                                                              value,
-                                                            ) => _setAttendance(
-                                                              userId: userId,
-                                                              attended: value,
-                                                            ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                userInfo?.email.isNotEmpty ==
+                                                        true
+                                                    ? userInfo!.email
+                                                    : fallbackEmail.isNotEmpty
+                                                    ? fallbackEmail
+                                                    : userId,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                      color: scheme
+                                                          .onSurfaceVariant,
                                                     ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                'Confirmacion: ${_labelResponse(response)}',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color: scheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                              ),
                                             ],
                                           ),
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              currentValue
+                                                  ? 'Asistio'
+                                                  : 'No asistio',
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelMedium
+                                                  ?.copyWith(
+                                                    color: currentValue
+                                                        ? Colors.green
+                                                        : scheme.error,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            isSaving
+                                                ? const Padding(
+                                                    padding: EdgeInsets.only(
+                                                      top: 6,
+                                                    ),
+                                                    child: SizedBox(
+                                                      width: 18,
+                                                      height: 18,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                          ),
+                                                    ),
+                                                  )
+                                                : Switch(
+                                                    value: currentValue,
+                                                    onChanged: isCancelled
+                                                        ? null
+                                                        : (value) =>
+                                                              _setAttendance(
+                                                                userId: userId,
+                                                                attended: value,
+                                                              ),
+                                                  ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
                               ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-              ),
-            );
-          },
-        ),
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          );
+        },
       ),
     );
   }
@@ -2394,10 +2973,21 @@ class _AttendanceSheetState extends State<_AttendanceSheet> {
         i,
         i + chunkSize > userIds.length ? userIds.length : i + chunkSize,
       );
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .where(FieldPath.documentId, whereIn: chunk)
-          .get();
+      QuerySnapshot<Map<String, dynamic>>? snap;
+      try {
+        snap = await FirebaseFirestore.instance
+            .collection('users')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get()
+            .timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        continue;
+      } on FirebaseException {
+        continue;
+      } catch (_) {
+        continue;
+      }
+      if (snap.docs.isEmpty) continue;
       for (final doc in snap.docs) {
         final data = doc.data();
         result[doc.id] = _AttendanceUserInfo(
@@ -2414,15 +3004,40 @@ class _AttendanceSheetState extends State<_AttendanceSheet> {
     required bool attended,
   }) async {
     if (userId.trim().isEmpty) return;
+    final previousValue = _pendingChanges[userId];
+    bool success = false;
     setState(() {
       _pendingChanges[userId] = attended;
       _savingUsers.add(userId);
     });
     try {
-      await widget.service.markAttendance(
-        trainingId: widget.trainingId,
-        userId: userId,
-        attended: attended,
+      final admin = FirebaseAuth.instance.currentUser;
+      if (admin == null) {
+        throw FirebaseException(
+          plugin: 'firebase_auth',
+          code: 'unauthenticated',
+          message: 'No hay sesion activa.',
+        );
+      }
+      await _trainingRef
+          .collection('attendance')
+          .doc(userId)
+          .set({
+            'userId': userId,
+            'attended': attended,
+            'markedAt': FieldValue.serverTimestamp(),
+            'markedBy': admin.uid,
+          }, SetOptions(merge: true))
+          .timeout(const Duration(seconds: 15));
+      success = true;
+    } on TimeoutException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La operacion tardo demasiado. Revisa tu conexion e intenta de nuevo.',
+          ),
+        ),
       );
     } on FirebaseException catch (e) {
       if (!mounted) return;
@@ -2442,6 +3057,13 @@ class _AttendanceSheetState extends State<_AttendanceSheet> {
     } finally {
       if (mounted) {
         setState(() {
+          if (!success) {
+            if (previousValue == null) {
+              _pendingChanges.remove(userId);
+            } else {
+              _pendingChanges[userId] = previousValue;
+            }
+          }
           _savingUsers.remove(userId);
         });
       }
@@ -2489,10 +3111,14 @@ class _AttendanceUserInfo {
 class _DateTimeField extends StatelessWidget {
   final String label;
   final DateTime value;
+  final DateTime? minDateTime;
+  final String? minErrorMessage;
   final ValueChanged<DateTime> onChanged;
   const _DateTimeField({
     required this.label,
     required this.value,
+    this.minDateTime,
+    this.minErrorMessage,
     required this.onChanged,
   });
 
@@ -2512,11 +3138,35 @@ class _DateTimeField extends StatelessWidget {
         final time = await showTimePicker(
           context: context,
           initialTime: TimeOfDay.fromDateTime(value),
+          builder: (context, child) {
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(alwaysUse24HourFormat: false),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
         );
         if (time == null) return;
-        onChanged(
-          DateTime(date.year, date.month, date.day, time.hour, time.minute),
+        final selected = DateTime(
+          date.year,
+          date.month,
+          date.day,
+          time.hour,
+          time.minute,
         );
+        if (minDateTime != null && !selected.isAfter(minDateTime!)) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                minErrorMessage ??
+                    'La fecha/hora seleccionada debe ser posterior.',
+              ),
+            ),
+          );
+          return;
+        }
+        onChanged(selected);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -2542,7 +3192,7 @@ class _DateTimeField extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    DateFormat('dd/MM/yyyy HH:mm').format(value),
+                    DateFormat('dd/MM/yyyy hh:mm a').format(value),
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),

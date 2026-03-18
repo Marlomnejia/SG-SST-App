@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -28,6 +29,19 @@ class UploadedAttachment {
 }
 
 class StorageService {
+  final FirebaseStorage _storage = _resolveStorageInstance();
+
+  static FirebaseStorage _resolveStorageInstance() {
+    final rawBucket = (Firebase.app().options.storageBucket ?? '').trim();
+    if (rawBucket.isEmpty) {
+      return FirebaseStorage.instance;
+    }
+    final bucket = rawBucket.startsWith('gs://')
+        ? rawBucket
+        : 'gs://$rawBucket';
+    return FirebaseStorage.instanceFor(app: Firebase.app(), bucket: bucket);
+  }
+
   Future<List<String>> uploadEventImages(
     List<XFile> images,
     String eventId,
@@ -37,9 +51,7 @@ class StorageService {
       for (var image in images) {
         String fileName =
             '${DateTime.now().millisecondsSinceEpoch}_${image.name}';
-        Reference ref = FirebaseStorage.instance.ref().child(
-          'eventos/$eventId/$fileName',
-        );
+        Reference ref = _storage.ref().child('eventos/$eventId/$fileName');
         UploadTask uploadTask = ref.putFile(File(image.path));
         TaskSnapshot snapshot = await uploadTask;
         String downloadUrl = await snapshot.ref.getDownloadURL();
@@ -61,7 +73,7 @@ class StorageService {
       for (var video in videos) {
         String fileName =
             '${DateTime.now().millisecondsSinceEpoch}_${video.name}';
-        Reference ref = FirebaseStorage.instance.ref().child(
+        Reference ref = _storage.ref().child(
           'eventos/$eventId/videos/$fileName',
         );
         UploadTask uploadTask = ref.putFile(File(video.path));
@@ -112,6 +124,19 @@ class StorageService {
     );
   }
 
+  Future<List<UploadedAttachment>> uploadInspectionAttachments({
+    required String institutionId,
+    required String inspectionId,
+    required List<ReportAttachmentInput> attachments,
+    void Function(double progress)? onProgress,
+  }) async {
+    return _uploadAttachmentsToBasePath(
+      attachments,
+      'institutions/$institutionId/inspections/$inspectionId',
+      onProgress: onProgress,
+    );
+  }
+
   Future<List<UploadedAttachment>> _uploadAttachmentsToBasePath(
     List<ReportAttachmentInput> attachments,
     String basePath, {
@@ -131,7 +156,7 @@ class StorageService {
           '${DateTime.now().millisecondsSinceEpoch}_${attachment.file.name}';
       final folder = attachment.type == 'video' ? 'videos' : 'images';
       final storagePath = '$basePath/$folder/$fileName';
-      final ref = FirebaseStorage.instance.ref().child(storagePath);
+      final ref = _storage.ref().child(storagePath);
       final task = ref.putFile(
         File(attachment.file.path),
         SettableMetadata(contentType: _contentType(extension, attachment.type)),

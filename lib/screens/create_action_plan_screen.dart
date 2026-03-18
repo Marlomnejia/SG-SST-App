@@ -107,7 +107,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
         (_currentUser!.institutionId ?? '').trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo identificar la institución del usuario.'),
+          content: Text('No se pudo identificar la instituciÃ³n del usuario.'),
         ),
       );
       return;
@@ -256,7 +256,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'No se encontró una institución asociada al usuario actual.',
+                  'No se encontrÃ³ una instituciÃ³n asociada al usuario actual.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium,
                 ),
@@ -418,6 +418,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
                           children: [
                             DropdownButtonFormField<String>(
                               initialValue: _responsibleUid,
+                              isExpanded: true,
                               decoration: const InputDecoration(
                                 labelText: 'Responsable de la accion *',
                                 hintText:
@@ -430,9 +431,19 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
                                       child: Text(
                                         option.subtitle.isEmpty
                                             ? option.displayName
-                                            : '${option.displayName} · ${option.subtitle}',
+                                            : '${option.displayName} - ${option.subtitle}',
+                                        maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                    ),
+                                  )
+                                  .toList(),
+                              selectedItemBuilder: (context) => options
+                                  .map(
+                                    (option) => Text(
+                                      option.displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   )
                                   .toList(),
@@ -464,7 +475,7 @@ class _CreateActionPlanScreenState extends State<CreateActionPlanScreen> {
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  'No hay usuarios disponibles en la institución para asignar esta acción.',
+                                  'No hay usuarios disponibles en la instituciÃ³n para asignar esta acciÃ³n.',
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: scheme.error,
                                   ),

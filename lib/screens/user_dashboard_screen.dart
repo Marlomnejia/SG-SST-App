@@ -11,9 +11,8 @@ import 'my_reports_screen.dart';
 import 'profile_screen.dart';
 import 'report_event_screen.dart';
 import 'action_plans_screen.dart';
+import 'inspection_management_screen.dart';
 import '../widgets/app_skeleton_box.dart';
-import '../widgets/app_meta_chip.dart';
-import '../widgets/notification_permission_banner.dart';
 
 class UserDashboardScreen extends StatefulWidget {
   const UserDashboardScreen({super.key});
@@ -36,6 +35,12 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
       <String, Stream<QuerySnapshot<Map<String, dynamic>>>>{};
   final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>>
   _videoTrainingStreams =
+      <String, Stream<QuerySnapshot<Map<String, dynamic>>>>{};
+  final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>>
+  _userActionPlanStreams =
+      <String, Stream<QuerySnapshot<Map<String, dynamic>>>>{};
+  final Map<String, Stream<QuerySnapshot<Map<String, dynamic>>>>
+  _userInspectionStreams =
       <String, Stream<QuerySnapshot<Map<String, dynamic>>>>{};
   final Map<String, Future<int>> _pendingTrainingCountFutures =
       <String, Future<int>>{};
@@ -155,7 +160,6 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
-                const NotificationPermissionBanner(),
                 _buildInstitutionInfoStrip(theme),
                 const SizedBox(height: 12),
                 _buildHeroCard(theme, primary),
@@ -181,129 +185,15 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                     final double itemWidth =
                         (width - (columns - 1) * spacing) / columns;
 
-                    return Wrap(
+                    return _buildMainActionsGrid(
+                      context,
+                      itemWidth: itemWidth,
                       spacing: spacing,
-                      runSpacing: spacing,
-                      children: [
-                        SizedBox(
-                          width: itemWidth,
-                          child: _buildActionCard(
-                            context,
-                            icon: Icons.add_circle_outline,
-                            title: 'Reportar evento',
-                            subtitle: 'Incidente o accidente',
-                            color: primary,
-                            backgroundColor: softSurface,
-                            borderColor: softBorder,
-                            isPrimary: true,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).push(_userRoute(const ReportEventScreen()));
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _buildActionCard(
-                            context,
-                            icon: Icons.school_outlined,
-                            title: 'Capacitaciones',
-                            subtitle: 'Gestión personal',
-                            color: scheme.primary,
-                            backgroundColor: softSurface,
-                            borderColor: softBorder,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).push(_userRoute(const CapacitacionesScreen()));
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _buildActionCard(
-                            context,
-                            icon: Icons.picture_as_pdf_outlined,
-                            title: 'Documentos SST',
-                            subtitle: 'Normativa y manuales',
-                            color: scheme.secondary,
-                            backgroundColor: softSurface,
-                            borderColor: softBorder,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).push(_userRoute(const DocumentsSstScreen()));
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _buildActionCard(
-                            context,
-                            icon: Icons.assignment_turned_in_outlined,
-                            title: 'Mis reportes',
-                            subtitle: 'Seguimiento personal',
-                            color: scheme.tertiary,
-                            backgroundColor: softSurface,
-                            borderColor: softBorder,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).push(_userRoute(const MyReportsScreen()));
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _buildActionCard(
-                            context,
-                            icon: Icons.person_outline,
-                            title: 'Perfil',
-                            subtitle: 'Configuración de cuenta',
-                            color: scheme.primary,
-                            backgroundColor: softSurface,
-                            borderColor: softBorder,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).push(_userRoute(const ProfileScreen()));
-                            },
-                          ),
-                        ),
-                        SizedBox(
-                          width: itemWidth,
-                          child: _buildActionCard(
-                            context,
-                            icon: Icons.event_available_outlined,
-                            title: 'Mis planes',
-                            subtitle: 'Acciones asignadas',
-                            color: scheme.secondary,
-                            backgroundColor: softSurface,
-                            borderColor: softBorder,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).push(_userRoute(const ActionPlansScreen()));
-                            },
-                          ),
-                        ),
-                      ],
+                      primary: primary,
+                      softSurface: softSurface,
+                      softBorder: softBorder,
                     );
                   },
-                ),
-                const SizedBox(height: 24),
-                _buildSectionTitle(
-                  context,
-                  'Resumen personal',
-                  subtitle:
-                      'Indicadores rapidos para saber que requiere atencion.',
-                ),
-                const SizedBox(height: 12),
-                _buildDynamicSummaryCards(
-                  context,
-                  backgroundColor: softSurface,
-                  borderColor: softBorder,
                 ),
               ],
             ),
@@ -460,6 +350,312 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     );
   }
 
+  Widget _buildMainActionsGrid(
+    BuildContext context, {
+    required double itemWidth,
+    required double spacing,
+    required Color primary,
+    required Color softSurface,
+    required Color softBorder,
+  }) {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) {
+      return _buildMainActionsWrap(
+        context,
+        itemWidth: itemWidth,
+        spacing: spacing,
+        primary: primary,
+        softSurface: softSurface,
+        softBorder: softBorder,
+      );
+    }
+
+    return FutureBuilder<String?>(
+      initialData: _lastKnownInstitutionId,
+      future: _getInstitutionIdCached(user.uid),
+      builder: (context, snapshot) {
+        final institutionId = (snapshot.data ?? '').trim();
+        if (institutionId.isNotEmpty) {
+          _lastKnownInstitutionId = institutionId;
+        }
+        return _buildMainActionsWrap(
+          context,
+          itemWidth: itemWidth,
+          spacing: spacing,
+          primary: primary,
+          softSurface: softSurface,
+          softBorder: softBorder,
+          uid: user.uid,
+          institutionId: institutionId.isEmpty ? null : institutionId,
+        );
+      },
+    );
+  }
+
+  Widget _buildMainActionsWrap(
+    BuildContext context, {
+    required double itemWidth,
+    required double spacing,
+    required Color primary,
+    required Color softSurface,
+    required Color softBorder,
+    String? uid,
+    String? institutionId,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget reportsCard = _buildActionCard(
+      context,
+      icon: Icons.assignment_turned_in_outlined,
+      title: 'Mis reportes',
+      subtitle: 'Seguimiento personal',
+      color: scheme.tertiary,
+      backgroundColor: softSurface,
+      borderColor: softBorder,
+      onTap: () {
+        Navigator.of(context).push(_userRoute(const MyReportsScreen()));
+      },
+    );
+
+    if (uid != null && institutionId != null) {
+      reportsCard = StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _getReportSummaryStream(institutionId: institutionId, uid: uid),
+        builder: (context, snapshot) {
+          final docs =
+              snapshot.data?.docs ??
+              const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+          final pendingCount = snapshot.hasData
+              ? _countActiveReports(docs)
+              : null;
+          return _buildActionCard(
+            context,
+            icon: Icons.assignment_turned_in_outlined,
+            title: 'Mis reportes',
+            subtitle: 'Seguimiento personal',
+            color: scheme.tertiary,
+            backgroundColor: softSurface,
+            borderColor: softBorder,
+            pendingCount: pendingCount,
+            onTap: () {
+              Navigator.of(context).push(_userRoute(const MyReportsScreen()));
+            },
+          );
+        },
+      );
+    }
+
+    Widget trainingsCard = _buildActionCard(
+      context,
+      icon: Icons.school_outlined,
+      title: 'Capacitaciones',
+      subtitle: 'Gestion personal',
+      color: scheme.primary,
+      backgroundColor: softSurface,
+      borderColor: softBorder,
+      onTap: () {
+        Navigator.of(context).push(_userRoute(const CapacitacionesScreen()));
+      },
+    );
+
+    if (uid != null && institutionId != null) {
+      trainingsCard = StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _getPublishedVideoTrainingsStream(institutionId: institutionId),
+        builder: (context, trainingsSnap) {
+          if (!trainingsSnap.hasData) {
+            return _buildActionCard(
+              context,
+              icon: Icons.school_outlined,
+              title: 'Capacitaciones',
+              subtitle: 'Gestion personal',
+              color: scheme.primary,
+              backgroundColor: softSurface,
+              borderColor: softBorder,
+              onTap: () {
+                Navigator.of(
+                  context,
+                ).push(_userRoute(const CapacitacionesScreen()));
+              },
+            );
+          }
+          final videoDocs =
+              trainingsSnap.data?.docs ??
+              const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+          return FutureBuilder<int>(
+            future: _getPendingTrainingCountFuture(
+              uid: uid,
+              videoDocs: videoDocs,
+            ),
+            builder: (context, pendingSnap) {
+              final pendingCount = pendingSnap.data;
+              return _buildActionCard(
+                context,
+                icon: Icons.school_outlined,
+                title: 'Capacitaciones',
+                subtitle: 'Gestion personal',
+                color: scheme.primary,
+                backgroundColor: softSurface,
+                borderColor: softBorder,
+                pendingCount: pendingCount,
+                onTap: () {
+                  Navigator.of(
+                    context,
+                  ).push(_userRoute(const CapacitacionesScreen()));
+                },
+              );
+            },
+          );
+        },
+      );
+    }
+
+    Widget plansCard = _buildActionCard(
+      context,
+      icon: Icons.event_available_outlined,
+      title: 'Mis planes',
+      subtitle: 'Acciones asignadas',
+      color: scheme.secondary,
+      backgroundColor: softSurface,
+      borderColor: softBorder,
+      onTap: () {
+        Navigator.of(context).push(_userRoute(const ActionPlansScreen()));
+      },
+    );
+
+    if (uid != null) {
+      plansCard = StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _getUserActionPlansStream(uid: uid),
+        builder: (context, snapshot) {
+          final pendingCount = snapshot.hasData
+              ? _countPendingAssignedPlans(
+                  snapshot.data?.docs ??
+                      const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+                  institutionId: institutionId,
+                )
+              : null;
+          return _buildActionCard(
+            context,
+            icon: Icons.event_available_outlined,
+            title: 'Mis planes',
+            subtitle: 'Acciones asignadas',
+            color: scheme.secondary,
+            backgroundColor: softSurface,
+            borderColor: softBorder,
+            pendingCount: pendingCount,
+            onTap: () {
+              Navigator.of(context).push(_userRoute(const ActionPlansScreen()));
+            },
+          );
+        },
+      );
+    }
+
+    Widget inspectionsCard = _buildActionCard(
+      context,
+      icon: Icons.fact_check_outlined,
+      title: 'Inspecciones',
+      subtitle: 'Checklist asignados',
+      color: scheme.tertiary,
+      backgroundColor: softSurface,
+      borderColor: softBorder,
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(_userRoute(const InspectionManagementScreen()));
+      },
+    );
+
+    if (uid != null && institutionId != null) {
+      inspectionsCard = StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _getUserInspectionsStream(
+          institutionId: institutionId,
+          uid: uid,
+        ),
+        builder: (context, snapshot) {
+          final pendingCount = snapshot.hasData
+              ? _countPendingInspections(
+                  snapshot.data?.docs ??
+                      const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
+                )
+              : null;
+          return _buildActionCard(
+            context,
+            icon: Icons.fact_check_outlined,
+            title: 'Inspecciones',
+            subtitle: 'Checklist asignados',
+            color: scheme.tertiary,
+            backgroundColor: softSurface,
+            borderColor: softBorder,
+            pendingCount: pendingCount,
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(_userRoute(const InspectionManagementScreen()));
+            },
+          );
+        },
+      );
+    }
+
+    return Wrap(
+      spacing: spacing,
+      runSpacing: spacing,
+      children: [
+        SizedBox(
+          width: itemWidth,
+          child: _buildActionCard(
+            context,
+            icon: Icons.add_circle_outline,
+            title: 'Reportar evento',
+            subtitle: 'Incidente o accidente',
+            color: primary,
+            backgroundColor: softSurface,
+            borderColor: softBorder,
+            isPrimary: true,
+            onTap: () {
+              Navigator.of(context).push(_userRoute(const ReportEventScreen()));
+            },
+          ),
+        ),
+        SizedBox(width: itemWidth, child: trainingsCard),
+        SizedBox(
+          width: itemWidth,
+          child: _buildActionCard(
+            context,
+            icon: Icons.picture_as_pdf_outlined,
+            title: 'Documentos SST',
+            subtitle: 'Normativa y manuales',
+            color: scheme.secondary,
+            backgroundColor: softSurface,
+            borderColor: softBorder,
+            onTap: () {
+              Navigator.of(
+                context,
+              ).push(_userRoute(const DocumentsSstScreen()));
+            },
+          ),
+        ),
+        SizedBox(width: itemWidth, child: reportsCard),
+        SizedBox(
+          width: itemWidth,
+          child: _buildActionCard(
+            context,
+            icon: Icons.person_outline,
+            title: 'Perfil',
+            subtitle: 'Configuracion de cuenta',
+            color: scheme.primary,
+            backgroundColor: softSurface,
+            borderColor: softBorder,
+            onTap: () {
+              Navigator.of(context).push(_userRoute(const ProfileScreen()));
+            },
+          ),
+        ),
+        SizedBox(width: itemWidth, child: plansCard),
+        SizedBox(width: itemWidth, child: inspectionsCard),
+      ],
+    );
+  }
+
   Widget _buildActionCard(
     BuildContext context, {
     required IconData icon,
@@ -470,6 +666,7 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
     required Color borderColor,
     required VoidCallback onTap,
     bool isPrimary = false,
+    int? pendingCount,
   }) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -508,14 +705,48 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    height: 40,
-                    width: 40,
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: isPrimary ? 0.2 : 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 22),
+                  Row(
+                    children: [
+                      Container(
+                        height: 40,
+                        width: 40,
+                        decoration: BoxDecoration(
+                          color: color.withValues(
+                            alpha: isPrimary ? 0.2 : 0.12,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(icon, color: color, size: 22),
+                      ),
+                      const Spacer(),
+                      if (pendingCount != null && pendingCount > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: pendingCount > 0
+                                ? scheme.errorContainer
+                                : scheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: pendingCount > 0
+                                  ? scheme.error.withValues(alpha: 0.45)
+                                  : scheme.outlineVariant,
+                            ),
+                          ),
+                          child: Text(
+                            pendingCount > 99 ? '99+' : '$pendingCount',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: pendingCount > 0
+                                  ? scheme.onErrorContainer
+                                  : scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -538,290 +769,6 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildSummaryTile(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required Color backgroundColor,
-    required Color borderColor,
-    int? count,
-    bool loading = false,
-    VoidCallback? onTap,
-  }) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final borderRadius = BorderRadius.circular(18);
-    return Material(
-      color: backgroundColor,
-      borderRadius: borderRadius,
-      child: InkWell(
-        borderRadius: borderRadius,
-        splashColor: color.withValues(alpha: 0.12),
-        highlightColor: color.withValues(alpha: 0.06),
-        onTap: onTap == null
-            ? null
-            : () {
-                HapticFeedback.selectionClick();
-                onTap();
-              },
-        child: Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: borderRadius,
-            border: Border.all(color: borderColor),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 7,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                height: 40,
-                width: 40,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppMetaChip(
-                      icon: Icons.insights_outlined,
-                      label: 'Seguimiento',
-                      background: color.withValues(alpha: 0.1),
-                      foreground: color,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      title,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.12,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (loading)
-                const AppSkeletonBox(
-                  height: 24,
-                  width: 38,
-                  borderRadius: BorderRadius.all(Radius.circular(999)),
-                )
-              else if (count != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: color.withValues(alpha: 0.35)),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: color,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.chevron_right,
-                color: borderColor.withValues(alpha: 0.9),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDynamicSummaryCards(
-    BuildContext context, {
-    required Color backgroundColor,
-    required Color borderColor,
-  }) {
-    final user = _firebaseAuth.currentUser;
-    final scheme = Theme.of(context).colorScheme;
-
-    Widget reportsTile({int? count, bool loading = false, String? subtitle}) {
-      final title = count == null
-          ? 'Mis reportes activos'
-          : 'Mis reportes activos ($count)';
-      return _buildSummaryTile(
-        context,
-        icon: Icons.warning_amber_rounded,
-        title: title,
-        subtitle: subtitle ?? 'Consulta el estado de tus reportes.',
-        color: scheme.secondary,
-        backgroundColor: backgroundColor,
-        borderColor: borderColor,
-        count: count,
-        loading: loading,
-        onTap: () {
-          Navigator.of(context).push(_userRoute(const MyReportsScreen()));
-        },
-      );
-    }
-
-    Widget trainingsTile({int? count, bool loading = false, String? subtitle}) {
-      final title = count == null
-          ? 'Capacitaciones pendientes'
-          : 'Capacitaciones pendientes ($count)';
-      return _buildSummaryTile(
-        context,
-        icon: Icons.event_available,
-        title: title,
-        subtitle: subtitle ?? 'Revisa tus cursos y fechas limite.',
-        color: scheme.primary,
-        backgroundColor: backgroundColor,
-        borderColor: borderColor,
-        count: count,
-        loading: loading,
-        onTap: () {
-          Navigator.of(context).push(_userRoute(const CapacitacionesScreen()));
-        },
-      );
-    }
-
-    if (user == null) {
-      return Column(
-        children: [reportsTile(), const SizedBox(height: 12), trainingsTile()],
-      );
-    }
-
-    return FutureBuilder<String?>(
-      initialData: _lastKnownInstitutionId,
-      future: _getInstitutionIdCached(user.uid),
-      builder: (context, institutionSnap) {
-        if (institutionSnap.connectionState == ConnectionState.waiting &&
-            !institutionSnap.hasData) {
-          return Column(
-            children: [
-              reportsTile(loading: true),
-              const SizedBox(height: 12),
-              trainingsTile(loading: true),
-            ],
-          );
-        }
-
-        final institutionId = (institutionSnap.data ?? '').trim();
-        if (institutionId.isNotEmpty) {
-          _lastKnownInstitutionId = institutionId;
-        }
-        if (institutionId.isEmpty) {
-          return Column(
-            children: [
-              reportsTile(
-                subtitle: 'Asigna una institución para ver el resumen.',
-              ),
-              const SizedBox(height: 12),
-              trainingsTile(
-                subtitle: 'Asigna una institución para ver las capacitaciones.',
-              ),
-            ],
-          );
-        }
-
-        return Column(
-          children: [
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _getReportSummaryStream(
-                institutionId: institutionId,
-                uid: user.uid,
-              ),
-              builder: (context, reportsSnap) {
-                if (reportsSnap.connectionState == ConnectionState.waiting &&
-                    !reportsSnap.hasData) {
-                  return reportsTile(loading: true);
-                }
-                if (reportsSnap.hasError) {
-                  return reportsTile(
-                    subtitle: 'No se pudo cargar el conteo de reportes.',
-                  );
-                }
-                final activeCount = _countActiveReports(
-                  reportsSnap.data?.docs ??
-                      const <QueryDocumentSnapshot<Map<String, dynamic>>>[],
-                );
-                return reportsTile(count: activeCount);
-              },
-            ),
-            const SizedBox(height: 12),
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: _getPublishedVideoTrainingsStream(
-                institutionId: institutionId,
-              ),
-              builder: (context, trainingsSnap) {
-                if (trainingsSnap.connectionState == ConnectionState.waiting &&
-                    !trainingsSnap.hasData) {
-                  return trainingsTile(loading: true);
-                }
-                if (trainingsSnap.hasError) {
-                  return trainingsTile(
-                    subtitle: 'No se pudo cargar el conteo de capacitaciones.',
-                  );
-                }
-                final videoDocs =
-                    trainingsSnap.data?.docs ??
-                    const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-                if (videoDocs.isEmpty) {
-                  return trainingsTile(
-                    count: 0,
-                    subtitle: 'No hay capacitaciones en línea publicadas.',
-                  );
-                }
-
-                return FutureBuilder<int>(
-                  future: _getPendingTrainingCountFuture(
-                    uid: user.uid,
-                    videoDocs: videoDocs,
-                  ),
-                  builder: (context, pendingSnap) {
-                    if (pendingSnap.connectionState ==
-                            ConnectionState.waiting &&
-                        !pendingSnap.hasData) {
-                      return trainingsTile(loading: true);
-                    }
-                    final pendingCount = pendingSnap.data ?? 0;
-                    final subtitle = pendingCount == 0
-                        ? 'Vas al día con tus capacitaciones en línea.'
-                        : 'Revisa tus cursos pendientes en línea.';
-                    return trainingsTile(
-                      count: pendingCount,
-                      subtitle: subtitle,
-                    );
-                  },
-                );
-              },
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -879,6 +826,93 @@ class _UserDashboardScreenState extends State<UserDashboardScreen> {
           .snapshots()
           .asBroadcastStream(),
     );
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _getUserActionPlansStream({
+    required String uid,
+  }) {
+    return _userActionPlanStreams.putIfAbsent(
+      uid,
+      () => _firestore
+          .collection('planesDeAccion')
+          .where('responsibleUid', isEqualTo: uid)
+          .snapshots()
+          .asBroadcastStream(),
+    );
+  }
+
+  int _countPendingAssignedPlans(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, {
+    String? institutionId,
+  }) {
+    return docs.where((doc) {
+      final data = doc.data();
+      final planInstitutionId = (data['institutionId'] ?? '').toString().trim();
+      if (institutionId != null &&
+          institutionId.isNotEmpty &&
+          planInstitutionId.isNotEmpty &&
+          planInstitutionId != institutionId) {
+        return false;
+      }
+      final status = _normalizePlanStatus(
+        (data['status'] ?? data['estado'] ?? '').toString(),
+      );
+      return status == 'pendiente' || status == 'en_curso';
+    }).length;
+  }
+
+  String _normalizePlanStatus(String raw) {
+    final normalized = raw.trim().toLowerCase().replaceAll(' ', '_');
+    if (normalized.contains('curso')) return 'en_curso';
+    if (normalized.contains('ejecut')) return 'ejecutado';
+    if (normalized.contains('verif')) return 'verificado';
+    if (normalized.contains('cerr')) return 'cerrado';
+    return 'pendiente';
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _getUserInspectionsStream({
+    required String institutionId,
+    required String uid,
+  }) {
+    final key = '$institutionId::$uid';
+    return _userInspectionStreams.putIfAbsent(
+      key,
+      () => _firestore
+          .collection('institutions')
+          .doc(institutionId)
+          .collection('inspections')
+          .where('assignedToUid', isEqualTo: uid)
+          .snapshots()
+          .asBroadcastStream(),
+    );
+  }
+
+  int _countPendingInspections(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs.where((doc) {
+      final status = _normalizeInspectionStatus(
+        (doc.data()['status'] ?? '').toString(),
+      );
+      return status == 'scheduled' || status == 'in_progress';
+    }).length;
+  }
+
+  String _normalizeInspectionStatus(String raw) {
+    final value = raw.trim().toLowerCase().replaceAll(' ', '_');
+    if (value.contains('progress') || value.contains('curso')) {
+      return 'in_progress';
+    }
+    if (value.contains('find') || value.contains('hallazgo')) {
+      return 'completed_with_findings';
+    }
+    if (value.contains('complet') || value.contains('cerrad')) {
+      return 'completed';
+    }
+    if (value.contains('cancel')) {
+      return 'cancelled';
+    }
+    return value.isEmpty ? 'scheduled' : value;
   }
 
   Future<int> _getPendingTrainingCountFuture({

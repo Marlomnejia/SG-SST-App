@@ -7,8 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/storage_service.dart';
 import '../widgets/app_meta_chip.dart';
-import '../widgets/notification_permission_banner.dart';
-import 'incident_detail_screen.dart';
+import 'report_details_screen.dart';
 
 class ActionPlansScreen extends StatefulWidget {
   const ActionPlansScreen({super.key});
@@ -140,10 +139,6 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
 
         return Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: NotificationPermissionBanner(),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: _buildHeaderCard(
@@ -375,6 +370,21 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
         closureEvidence.isNotEmpty ||
         closureAttachments.isNotEmpty ||
         (verificationStatus.isNotEmpty && verificationStatus != 'pendiente');
+    final taskInstruction = description.isNotEmpty ? description : title;
+    final latestResponsibleUpdate =
+        _readDate(data['executionUpdatedAt']) ??
+        (progressHistory.isNotEmpty ? progressHistory.first.updatedAt : null);
+    final nextStepForResponsible = _nextStepForResponsible(
+      status: status,
+      requiresAdjustment: requiresAdjustment,
+      hasExecutionDetails: hasExecutionDetails,
+    );
+    final nextStepForManager = _nextStepForManager(
+      status: status,
+      requiresAdjustment: requiresAdjustment,
+      hasExecutionDetails: hasExecutionDetails,
+      needsValidation: needsValidation,
+    );
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -436,19 +446,20 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
                     background: _priorityBackground(priority, scheme),
                     foreground: _priorityForeground(priority, scheme),
                   ),
-                if (isMine)
+                if (dueDate != null && !_isClosedStatus(status))
                   AppMetaChip(
-                    icon: Icons.person_outline,
-                    label: 'Asignado a ti',
-                    background: scheme.primaryContainer,
-                    foreground: scheme.onPrimaryContainer,
-                  ),
-                if (overdue)
-                  AppMetaChip(
-                    icon: Icons.event_busy_outlined,
-                    label: 'Vencido',
-                    background: scheme.errorContainer,
-                    foreground: scheme.onErrorContainer,
+                    icon: Icons.schedule_outlined,
+                    label: _dueStatusLabel(
+                      dueDate: dueDate,
+                      status: status,
+                      overdue: overdue,
+                    ),
+                    background: overdue
+                        ? scheme.errorContainer
+                        : scheme.surfaceContainerHigh,
+                    foreground: overdue
+                        ? scheme.onErrorContainer
+                        : scheme.onSurfaceVariant,
                   ),
                 if (requiresAdjustment)
                   AppMetaChip(
@@ -494,17 +505,77 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            _infoRow(
+            _buildDetailPanel(
               context,
-              icon: Icons.badge_outlined,
-              label: 'Responsable de la accion',
-              value: responsibleName,
+              title: _isManager
+                  ? 'Seguimiento del responsable'
+                  : 'Que debes ejecutar',
+              icon: _isManager
+                  ? Icons.manage_accounts_outlined
+                  : Icons.assignment_turned_in_outlined,
+              children: _isManager
+                  ? [
+                      _infoRow(
+                        context,
+                        icon: Icons.badge_outlined,
+                        label: 'Responsable',
+                        value: responsibleName,
+                      ),
+                      _infoRow(
+                        context,
+                        icon: Icons.rule_folder_outlined,
+                        label: 'Accion asignada',
+                        value: taskInstruction,
+                      ),
+                      _infoRow(
+                        context,
+                        icon: Icons.update_outlined,
+                        label: 'Ultimo reporte',
+                        value: latestResponsibleUpdate == null
+                            ? 'Sin avances del responsable'
+                            : _formatDateTime(latestResponsibleUpdate),
+                      ),
+                      _infoRow(
+                        context,
+                        icon: Icons.perm_media_outlined,
+                        label: 'Evidencias recibidas',
+                        value: executionAttachments.isEmpty
+                            ? 'Sin adjuntos'
+                            : '${executionAttachments.length} adjunto(s)',
+                      ),
+                      _infoRow(
+                        context,
+                        icon: Icons.arrow_forward_outlined,
+                        label: 'Siguiente accion admin',
+                        value: nextStepForManager,
+                      ),
+                    ]
+                  : [
+                      _infoRow(
+                        context,
+                        icon: Icons.rule_folder_outlined,
+                        label: 'Accion requerida',
+                        value: taskInstruction,
+                      ),
+                      _infoRow(
+                        context,
+                        icon: Icons.track_changes_outlined,
+                        label: 'Resultado esperado',
+                        value: _expectedOutcome(actionType),
+                      ),
+                      _infoRow(
+                        context,
+                        icon: Icons.arrow_forward_outlined,
+                        label: 'Siguiente paso',
+                        value: nextStepForResponsible,
+                      ),
+                    ],
             ),
             const SizedBox(height: 6),
             _infoRow(
               context,
               icon: Icons.calendar_today_outlined,
-              label: 'Inicio',
+              label: 'Inicio del plan',
               value: startDate == null ? 'Sin fecha' : _formatDate(startDate),
             ),
             const SizedBox(height: 6),
@@ -514,6 +585,19 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
               label: 'Fecha limite',
               value: dueDate == null ? 'Sin fecha' : _formatDate(dueDate),
             ),
+            if (dueDate != null && !_isClosedStatus(status)) ...[
+              const SizedBox(height: 6),
+              _infoRow(
+                context,
+                icon: Icons.timer_outlined,
+                label: 'Tiempo restante',
+                value: _dueStatusLabel(
+                  dueDate: dueDate,
+                  status: status,
+                  overdue: overdue,
+                ),
+              ),
+            ],
             if (hasExecutionDetails) ...[
               const SizedBox(height: 10),
               _buildDetailPanel(
@@ -636,7 +720,7 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
                 child: FilledButton.icon(
                   onPressed: () => _showValidationDialog(doc),
                   icon: const Icon(Icons.fact_check_outlined, size: 18),
-                  label: const Text('Validar'),
+                  label: const Text('Validar ejecucion'),
                 ),
               ),
             ],
@@ -1179,6 +1263,7 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
     var selectedStatus = currentStatus == 'ejecutado'
         ? 'ejecutado'
         : 'en_curso';
+    var noteRequiredError = false;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1214,15 +1299,26 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  TextField(
+                  TextFormField(
                     controller: noteController,
                     maxLines: 3,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Nota de avance',
                       hintText:
                           'Describe que se realizo o que falta para completar la accion.',
                       border: OutlineInputBorder(),
+                      errorText:
+                          noteRequiredError && selectedStatus == 'ejecutado'
+                          ? 'La nota es obligatoria para marcar como ejecutado.'
+                          : null,
                     ),
+                    onChanged: (value) {
+                      if (noteRequiredError &&
+                          value.trim().isNotEmpty &&
+                          selectedStatus == 'ejecutado') {
+                        setDialogState(() => noteRequiredError = false);
+                      }
+                    },
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -1261,7 +1357,16 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
+              onPressed: () {
+                final requiresNote =
+                    selectedStatus == 'ejecutado' &&
+                    noteController.text.trim().isEmpty;
+                if (requiresNote) {
+                  setDialogState(() => noteRequiredError = true);
+                  return;
+                }
+                Navigator.pop(dialogContext, true);
+              },
               child: const Text('Guardar'),
             ),
           ],
@@ -1539,28 +1644,20 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
   }
 
   Future<void> _openRelatedIncident(String reportId) async {
-    try {
-      final snap = await _firestore.collection('eventos').doc(reportId).get();
-      if (!snap.exists) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se encontro el caso relacionado.')),
-        );
-        return;
-      }
+    final trimmed = reportId.trim();
+    if (trimmed.isEmpty) {
       if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => IncidentDetailScreen(eventDocument: snap),
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se encontro el caso relacionado.')),
       );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('No se pudo abrir el caso: $e')));
+      return;
     }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReportDetailsScreen(documentId: trimmed),
+      ),
+    );
   }
 
   List<_ActionPlanFilter> get _availableFilters {
@@ -1702,6 +1799,89 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
   }
 
   String _formatDate(DateTime date) => DateFormat('dd/MM/yyyy').format(date);
+
+  String _formatDateTime(DateTime date) =>
+      DateFormat('dd/MM/yyyy HH:mm').format(date);
+
+  String _dueStatusLabel({
+    required DateTime dueDate,
+    required String status,
+    required bool overdue,
+  }) {
+    if (_isClosedStatus(status)) return 'Plan cerrado';
+    if (overdue) {
+      final now = DateTime.now();
+      final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+      final nowOnly = DateTime(now.year, now.month, now.day);
+      final daysLate = nowOnly.difference(dueOnly).inDays;
+      final safeDaysLate = daysLate <= 0 ? 1 : daysLate;
+      return '$safeDaysLate dia(s) de atraso';
+    }
+
+    final now = DateTime.now();
+    final dueOnly = DateTime(dueDate.year, dueDate.month, dueDate.day);
+    final nowOnly = DateTime(now.year, now.month, now.day);
+    final days = dueOnly.difference(nowOnly).inDays;
+    if (days <= 0) return 'Vence hoy';
+    if (days == 1) return 'Vence manana';
+    return '$days dias restantes';
+  }
+
+  String _expectedOutcome(String actionType) {
+    final value = actionType.trim().toLowerCase();
+    if (value.contains('correctiva')) {
+      return 'Corregir el hallazgo y dejar evidencia de la solucion aplicada.';
+    }
+    if (value.contains('preventiva')) {
+      return 'Implementar control para evitar la recurrencia del riesgo.';
+    }
+    return 'Registrar mejora aplicada y evidencia de su implementacion.';
+  }
+
+  String _nextStepForResponsible({
+    required String status,
+    required bool requiresAdjustment,
+    required bool hasExecutionDetails,
+  }) {
+    if (requiresAdjustment) {
+      return 'Ajusta el plan segun la observacion del admin y reporta de nuevo.';
+    }
+    if (status == 'pendiente') {
+      return 'Inicia la ejecucion y registra el primer avance.';
+    }
+    if (status == 'en_curso') {
+      return hasExecutionDetails
+          ? 'Completa lo pendiente y marca el plan como ejecutado.'
+          : 'Registra avance y agrega evidencia para soporte.';
+    }
+    if (status == 'ejecutado') {
+      return 'Espera validacion del admin SST.';
+    }
+    return 'Plan finalizado. No tienes acciones pendientes.';
+  }
+
+  String _nextStepForManager({
+    required String status,
+    required bool requiresAdjustment,
+    required bool hasExecutionDetails,
+    required bool needsValidation,
+  }) {
+    if (needsValidation) {
+      return 'Revisar evidencias del responsable y emitir validacion.';
+    }
+    if (requiresAdjustment) {
+      return 'Esperar correccion del responsable segun observacion enviada.';
+    }
+    if (status == 'pendiente') {
+      return 'Monitorear inicio de la ejecucion por el responsable.';
+    }
+    if (status == 'en_curso') {
+      return hasExecutionDetails
+          ? 'Dar seguimiento al avance y fecha limite.'
+          : 'Aun no hay reporte del responsable.';
+    }
+    return 'Plan finalizado o verificado.';
+  }
 
   String _filterLabel(_ActionPlanFilter filter) {
     switch (filter) {

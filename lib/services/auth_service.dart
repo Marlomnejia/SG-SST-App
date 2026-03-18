@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/institution.dart';
 import '../models/invitation.dart';
@@ -61,6 +62,60 @@ class AuthService {
   final InstitutionService _institutionService = InstitutionService();
   final UserService _userService = UserService();
   final DocumentUploadService _documentService = DocumentUploadService();
+  static const Set<String> _allowedRoles = {
+    'admin',
+    'admin_sst',
+    'user',
+    'employee',
+  };
+
+  Future<bool> _safeNitAlreadyExists(String nit) async {
+    try {
+      return await _institutionService.isNitRegistered(nit);
+    } on FirebaseException catch (e) {
+      // En el registro inicial, un usuario sin institucion no puede leer
+      // la coleccion institutions por reglas. No bloquear el onboarding.
+      if (e.code == 'permission-denied') {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  Future<String?> _resolveRoleFromFirestoreOrClaims(User user) async {
+    final firestoreRole = (await _userService.getUserRole(user.uid) ?? '')
+        .toString()
+        .trim();
+    if (_allowedRoles.contains(firestoreRole)) {
+      return firestoreRole;
+    }
+
+    String claimRole = '';
+    try {
+      final tokenResult = await user.getIdTokenResult(true);
+      claimRole = (tokenResult.claims?['role'] ?? '').toString().trim();
+    } catch (_) {}
+    if (!_allowedRoles.contains(claimRole)) {
+      // En primer login social puede no existir perfil en Firestore todavia.
+      // Creamos un perfil base para mantener consistencia con Auth.
+      final existingData = await _userService.getUserData(user.uid);
+      if (existingData == null) {
+        await _userService.createUserProfile(user, role: 'user');
+      } else if ((existingData['role'] ?? '').toString().trim().isEmpty) {
+        await _userService.updateUserProfile(user.uid, {'role': 'user'});
+      }
+      return null;
+    }
+
+    final existingData = await _userService.getUserData(user.uid);
+    if (existingData == null) {
+      await _userService.createUserProfile(user, role: claimRole);
+    } else if ((existingData['role'] ?? '').toString().trim().isEmpty) {
+      await _userService.updateUserProfile(user.uid, {'role': claimRole});
+    }
+
+    return claimRole;
+  }
 
   Future<User?> signInWithEmailAndPassword(
     String email,
@@ -111,7 +166,7 @@ class AuthService {
     void Function(String)? onProgress,
   }) async {
     // Verificar si el NIT ya está registrado
-    final nitExists = await _institutionService.isNitRegistered(institutionNit);
+    final nitExists = await _safeNitAlreadyExists(institutionNit);
     if (nitExists) {
       throw AuthException(
         code: 'nit-already-exists',
@@ -306,9 +361,8 @@ class AuthService {
         return null;
       }
 
-      // Verificar si el usuario ya existe en Firestore
-      final existingRole = await _userService.getUserRole(user.uid);
-
+      // Verificar rol válido en Firestore o claims (y sincronizar si hace falta)
+      final existingRole = await _resolveRoleFromFirestoreOrClaims(user);
       if (existingRole == null) {
         // Usuario nuevo de Google - lanzar excepción para onboarding
         throw SocialUserNotRegisteredException(
@@ -349,9 +403,8 @@ class AuthService {
         return null;
       }
 
-      // Verificar si el usuario ya existe en Firestore
-      final existingRole = await _userService.getUserRole(user.uid);
-
+      // Verificar rol válido en Firestore o claims (y sincronizar si hace falta)
+      final existingRole = await _resolveRoleFromFirestoreOrClaims(user);
       if (existingRole == null) {
         // Usuario nuevo de Microsoft - lanzar excepción para onboarding
         throw SocialUserNotRegisteredException(
@@ -456,7 +509,7 @@ class AuthService {
     void Function(String)? onProgress,
   }) async {
     // Verificar si el NIT ya está registrado
-    final nitExists = await _institutionService.isNitRegistered(institutionNit);
+    final nitExists = await _safeNitAlreadyExists(institutionNit);
     if (nitExists) {
       throw AuthException(
         code: 'nit-already-exists',

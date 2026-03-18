@@ -147,7 +147,7 @@ class _SocialOnboardingScreenState extends State<SocialOnboardingScreen> {
   }
 
   void _navigateToRegisterInstitution() {
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) =>

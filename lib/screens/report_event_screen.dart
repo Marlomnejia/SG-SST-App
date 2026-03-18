@@ -6,7 +6,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import '../services/event_service.dart';
-import '../services/report_draft_service.dart';
 import '../services/storage_service.dart';
 import 'map_preview_screen.dart';
 import 'report_submitted_screen.dart';
@@ -45,7 +44,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   };
 
   final _eventService = EventService();
-  final _draftService = ReportDraftService();
   final _picker = ImagePicker();
   final _k1 = GlobalKey<FormState>(), _k2 = GlobalKey<FormState>();
   final _desc = TextEditingController();
@@ -53,10 +51,8 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   final _place = TextEditingController();
   final _reference = TextEditingController();
   final _evidence = <_Evidence>[];
-  late final DateTime _initialEventDateTime;
-  final String _draftLocalId = DateTime.now().millisecondsSinceEpoch.toString();
 
-  int _step = 0, _drafts = 0;
+  int _step = 0;
   bool _loading = false,
       _locating = false,
       _graveShown = false,
@@ -69,7 +65,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   String _affType = 'Yo', _affCount = 'No aplica';
   String? _gpsAddress;
   DateTime? _protocolAcknowledgedAt;
-  DateTime? _lastDraftSavedAt;
   DateTime _dt = DateTime.now();
   double? _lat, _lng;
   List<String> _recentPlaces = [];
@@ -77,8 +72,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   @override
   void initState() {
     super.initState();
-    _initialEventDateTime = _dt;
-    _loadDrafts();
     _loadPlaceSuggestions();
   }
 
@@ -92,11 +85,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
       e.vc?.dispose();
     }
     super.dispose();
-  }
-
-  Future<void> _loadDrafts() async {
-    final d = await _draftService.getDrafts();
-    if (mounted) setState(() => _drafts = d.length);
   }
 
   Future<void> _loadPlaceSuggestions() async {
@@ -178,22 +166,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
 
   bool _v2() => _k2.currentState?.validate() ?? false;
 
-  bool get _hasDraftableContent {
-    return _reportType != _reportTypes.first ||
-        _severity != 'Leve' ||
-        _affType != 'Yo' ||
-        _affCount != 'No aplica' ||
-        _hasWitness ||
-        _place.text.trim().isNotEmpty ||
-        _reference.text.trim().isNotEmpty ||
-        _desc.text.trim().isNotEmpty ||
-        _wit.text.trim().isNotEmpty ||
-        _evidence.isNotEmpty ||
-        _lat != null ||
-        _lng != null ||
-        _dt != _initialEventDateTime;
-  }
-
   String _currentStepLabel() {
     switch (_step) {
       case 0:
@@ -205,12 +177,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
       default:
         return 'Completa la informacion del reporte.';
     }
-  }
-
-  String _formatDraftSavedAt(DateTime value) {
-    final hh = value.hour.toString().padLeft(2, '0');
-    final min = value.minute.toString().padLeft(2, '0');
-    return '$hh:$min';
   }
 
   Map<String, dynamic> _location() {
@@ -391,9 +357,12 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     final dd = value.day.toString().padLeft(2, '0');
     final mm = value.month.toString().padLeft(2, '0');
     final yyyy = value.year.toString();
-    final hh = value.hour.toString().padLeft(2, '0');
+    final hour24 = value.hour;
+    final hour12 = ((hour24 + 11) % 12) + 1;
+    final hh = hour12.toString().padLeft(2, '0');
     final min = value.minute.toString().padLeft(2, '0');
-    return '$dd/$mm/$yyyy  $hh:$min';
+    final period = hour24 >= 12 ? 'PM' : 'AM';
+    return '$dd/$mm/$yyyy  $hh:$min $period';
   }
 
   Future<void> _pickDate() async {
@@ -407,6 +376,17 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_dt),
+      builder: (context, child) {
+        final media = MediaQuery.of(context);
+        return MediaQuery(
+          data: media.copyWith(alwaysUse24HourFormat: false),
+          child: Localizations.override(
+            context: context,
+            locale: const Locale('es', 'CO'),
+            child: child ?? const SizedBox.shrink(),
+          ),
+        );
+      },
     );
     if (t == null) return;
     setState(() => _dt = DateTime(d.year, d.month, d.day, t.hour, t.minute));
@@ -544,45 +524,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
     }
   }
 
-  bool _offline(Object e) {
-    final t = e.toString().toLowerCase();
-    return t.contains('network') ||
-        t.contains('socket') ||
-        t.contains('unavailable');
-  }
-
-  Future<void> _saveDraft({bool notify = false}) async {
-    await _draftService.saveDraft({
-      'localId': _draftLocalId,
-      'eventType': _eventType,
-      'reportType': _reportType,
-      'severity': _severity,
-      'location': _location(),
-      'eventDateTime': _dt.toIso8601String(),
-      'description': _desc.text.trim(),
-      'people': _people(),
-      'gps': {'lat': _lat, 'lng': _lng, 'address': _gpsAddress},
-      'attachments': _evidence
-          .map((e) => {'path': e.file.path, 'type': e.type})
-          .toList(),
-      'savedAt': DateTime.now().toIso8601String(),
-    });
-    _lastDraftSavedAt = DateTime.now();
-    _loadDrafts();
-    if (notify && mounted) {
-      _msg('Borrador actualizado correctamente.');
-    }
-  }
-
-  Future<void> _saveCurrentDraft() async {
-    if (_loading) return;
-    if (!_hasDraftableContent) {
-      _msg('Agrega al menos un dato antes de guardar un borrador.');
-      return;
-    }
-    await _saveDraft(notify: true);
-  }
-
   Future<void> _submit() async {
     if (!_v1() || !_v2()) return;
     if (!await _ensureEventTypeConsistency()) return;
@@ -633,9 +574,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
           }
         }
       }
-      await _draftService.removeDraft(_draftLocalId);
-      _lastDraftSavedAt = null;
-      await _loadDrafts();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -647,70 +585,9 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
         ),
       );
     } catch (e) {
-      if (_offline(e)) {
-        await _saveDraft();
-        _msg('Sin conexion. Guardado como borrador.');
-      } else {
-        _msg('Error al enviar: $e');
-      }
+      _msg('Error al enviar: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _syncDrafts() async {
-    final drafts = await _draftService.getDrafts();
-    if (drafts.isEmpty) return _msg('No hay borradores.');
-    setState(() {
-      _loading = true;
-      _progress = 0;
-    });
-    int ok = 0;
-    for (final d in drafts) {
-      try {
-        final files = <ReportAttachmentInput>[];
-        for (final a in (d['attachments'] as List<dynamic>? ?? [])) {
-          if (a is! Map) continue;
-          final p = (a['path'] ?? '').toString();
-          if (p.isEmpty || !await File(p).exists()) continue;
-          files.add(
-            ReportAttachmentInput(
-              file: XFile(p),
-              type: (a['type'] ?? 'image').toString(),
-            ),
-          );
-        }
-        final gps = (d['gps'] as Map?) ?? const {};
-        await _eventService.submitStructuredReport(
-          eventType: (d['eventType'] ?? 'Incidente').toString(),
-          reportType: (d['reportType'] ?? 'Condicion insegura').toString(),
-          severity: (d['severity'] ?? 'Leve').toString(),
-          location: Map<String, dynamic>.from(
-            (d['location'] as Map?) ?? const {},
-          ),
-          eventDateTime:
-              DateTime.tryParse((d['eventDateTime'] ?? '').toString()) ??
-              DateTime.now(),
-          description: (d['description'] ?? '').toString(),
-          people: Map<String, dynamic>.from((d['people'] as Map?) ?? const {}),
-          latitude: (gps['lat'] as num?)?.toDouble(),
-          longitude: (gps['lng'] as num?)?.toDouble(),
-          gpsAddress: (gps['address'] ?? '').toString(),
-          attachments: files,
-          onUploadProgress: (p) {
-            if (mounted) setState(() => _progress = p);
-          },
-        );
-        final id = (d['localId'] ?? '').toString();
-        if (id.isNotEmpty) await _draftService.removeDraft(id);
-        ok++;
-      } catch (_) {}
-    }
-    if (mounted) {
-      setState(() => _loading = false);
-      _loadDrafts();
-      _loadPlaceSuggestions();
-      _msg('Borradores sincronizados: $ok/${drafts.length}');
     }
   }
 
@@ -750,12 +627,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: _loading ? null : _saveCurrentDraft,
-                icon: const Icon(Icons.save_outlined, size: 18),
-                label: const Text('Guardar'),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -773,10 +644,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
             runSpacing: 8,
             children: [
               _HeaderBadge(
-                icon: Icons.cloud_upload_outlined,
-                label: _drafts == 0 ? 'Sin borradores' : 'Borradores: $_drafts',
-              ),
-              _HeaderBadge(
                 icon: _lat == null || _lng == null
                     ? Icons.location_searching_outlined
                     : Icons.my_location_outlined,
@@ -790,13 +657,6 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
                     ? null
                     : scheme.onSecondaryContainer,
               ),
-              if (_lastDraftSavedAt != null)
-                _HeaderBadge(
-                  icon: Icons.check_circle_outline,
-                  label: 'Guardado ${_formatDraftSavedAt(_lastDraftSavedAt!)}',
-                  background: scheme.tertiaryContainer,
-                  foreground: scheme.onTertiaryContainer,
-                ),
             ],
           ),
         ],
@@ -808,37 +668,7 @@ class _ReportEventScreenState extends State<ReportEventScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reportar evento'),
-        actions: [
-          IconButton(
-            tooltip: 'Sincronizar borradores',
-            onPressed: _loading ? null : _syncDrafts,
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.cloud_upload_outlined),
-                if (_drafts > 0)
-                  Positioned(
-                    top: -4,
-                    right: -6,
-                    child: CircleAvatar(
-                      radius: 8,
-                      backgroundColor: scheme.error,
-                      child: Text(
-                        '$_drafts',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Reportar evento')),
       body: Column(
         children: [
           _buildProgressHeader(scheme),

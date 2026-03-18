@@ -28,8 +28,8 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Confirmar aprobacion'),
         content: Text(
-          '¿Estas seguro de aprobar la institución "${widget.institution.name}"?\n\n'
-          'Esta acción habilitará la institución y sus usuarios podrán acceder al sistema.',
+          'Estas seguro de aprobar la institucion "${widget.institution.name}"?\n\n'
+          'Esta accion habilitara la institucion y sus usuarios podran acceder al sistema.',
         ),
         actions: [
           TextButton(
@@ -87,13 +87,13 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Rechazar institución'),
+        title: const Text('Rechazar institucion'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '¿Estas seguro de rechazar la institución "${widget.institution.name}"?',
+              'Estas seguro de rechazar la institucion "${widget.institution.name}"?',
             ),
             const SizedBox(height: 16),
             TextField(
@@ -153,6 +153,125 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al rechazar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _suspendInstitution() async {
+    final reasonController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Suspender institucion'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Estas seguro de suspender la institucion "${widget.institution.name}"?',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                labelText: 'Motivo de suspension (opcional)',
+                hintText: 'Ej: revision interna en curso',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Suspender'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    setState(() => _isLoading = true);
+    try {
+      await _institutionService.suspendInstitution(
+        widget.institution.id,
+        reason: reasonController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.institution.name} fue suspendida'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al suspender: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _reactivateInstitution() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reactivar institucion'),
+        content: Text(
+          'Deseas reactivar la institucion "${widget.institution.name}" para habilitar su operacion?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Reactivar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    setState(() => _isLoading = true);
+    try {
+      await _institutionService.reactivateInstitution(widget.institution.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${widget.institution.name} fue reactivada'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al reactivar: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -274,7 +393,7 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
     final statusMeta = _statusPresentation(institution.status, scheme);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Detalle de la institución')),
+      appBar: AppBar(title: const Text('Detalle de la institucion')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -366,7 +485,7 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                     children: [
                       _buildInfoRow('Email', institution.email),
                       _buildInfoRow(
-                        'Teléfono institución',
+                        'Telefono institucion',
                         institution.institutionPhone,
                       ),
                       _buildInfoRow(
@@ -404,7 +523,7 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                       if (institution.type == InstitutionType.public)
                         _buildDocumentButton(
                           context,
-                          'Acta de posesión',
+                          'Acta de posesion',
                           institution.documents.appointmentAct,
                           Icons.description_outlined,
                         ),
@@ -425,7 +544,7 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                     ],
                   ),
                   const SizedBox(height: 32),
-                  if (institution.status == InstitutionStatus.pending)
+                  if (institution.status == InstitutionStatus.pending) ...[
                     Row(
                       children: [
                         Expanded(
@@ -454,9 +573,32 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
                           ),
                         ),
                       ],
-                    )
-                  else
+                    ),
+                  ] else ...[
                     _buildStatusInfoCard(context, institution, statusMeta),
+                    const SizedBox(height: 12),
+                    if (institution.status == InstitutionStatus.active)
+                      OutlinedButton.icon(
+                        onPressed: _isLoading ? null : _suspendInstitution,
+                        icon: const Icon(Icons.pause_circle_outline),
+                        label: const Text('Suspender institucion'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.orange.shade800,
+                          side: BorderSide(color: Colors.orange.shade700),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    if (institution.status == InstitutionStatus.rejected ||
+                        institution.status == InstitutionStatus.suspended)
+                      FilledButton.icon(
+                        onPressed: _isLoading ? null : _reactivateInstitution,
+                        icon: const Icon(Icons.restart_alt_outlined),
+                        label: const Text('Reactivar institucion'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 24),
                 ],
               ),
@@ -471,12 +613,17 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
     switch (status) {
       case InstitutionStatus.active:
         return _InstitutionStatusPresentation(
-          label: 'Institución activa',
+          label: 'Institucion activa',
           color: Colors.green.shade700,
+        );
+      case InstitutionStatus.suspended:
+        return _InstitutionStatusPresentation(
+          label: 'Institucion suspendida',
+          color: Colors.orange.shade700,
         );
       case InstitutionStatus.rejected:
         return _InstitutionStatusPresentation(
-          label: 'Institución rechazada',
+          label: 'Institucion rechazada',
           color: scheme.error,
         );
       case InstitutionStatus.pending:
@@ -494,11 +641,15 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
   ) {
     final scheme = Theme.of(context).colorScheme;
     final String message;
-
     switch (institution.status) {
       case InstitutionStatus.active:
         message =
-            'La institución ya fue aprobada y puede operar normalmente en la plataforma.';
+            'La institucion ya fue aprobada y puede operar normalmente en la plataforma.';
+        break;
+      case InstitutionStatus.suspended:
+        message = institution.suspensionReason?.isNotEmpty == true
+            ? 'La institucion esta suspendida temporalmente. Motivo: ${institution.suspensionReason}'
+            : 'La institucion esta suspendida temporalmente por control administrativo.';
         break;
       case InstitutionStatus.rejected:
         message = institution.rejectionReason?.isNotEmpty == true
@@ -507,7 +658,7 @@ class _InstitutionReviewScreenState extends State<InstitutionReviewScreen> {
         break;
       case InstitutionStatus.pending:
         message =
-            'La institución sigue pendiente de revisión por parte del super administrador.';
+            'La institucion sigue pendiente de revision por parte del super administrador.';
         break;
     }
 

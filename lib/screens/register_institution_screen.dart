@@ -86,6 +86,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
   @override
   void initState() {
     super.initState();
+    AuthService.socialAuthFlowActive = true;
     _loadLocations();
     if (widget.socialUserData != null) {
       _adminNameController.text = widget.socialUserData!.displayName;
@@ -135,6 +136,7 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
 
   @override
   void dispose() {
+    AuthService.socialAuthFlowActive = false;
     _institutionNameController.dispose();
     _nitController.dispose();
     _addressController.dispose();
@@ -321,6 +323,16 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
       }
     } on FirebaseAuthException catch (e) {
       _showMessage(_mapAuthError(e.code));
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        _showMessage(
+          'Permisos insuficientes para completar el registro (${e.code}). ${e.message ?? ''}',
+        );
+      } else {
+        _showMessage(
+          e.message ?? 'Error de Firebase al registrar. Intenta de nuevo.',
+        );
+      }
     } on AuthException catch (e) {
       _showMessage(e.message);
     } on DocumentUploadException catch (e) {
@@ -758,80 +770,96 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.green.withValues(alpha: 0.1)
-                    : scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                isSelected ? Icons.check_circle : Icons.description_outlined,
-                color: isSelected ? Colors.green : scheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    isSelected
+                        ? Icons.check_circle
+                        : Icons.description_outlined,
+                    color: isSelected ? Colors.green : scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        type.displayName,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.error.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Requerido',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: scheme.error,
-                            fontWeight: FontWeight.w500,
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            type.displayName,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
-                        ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: scheme.error.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Requerido',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: scheme.error,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                      if (isSelected && file != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          file.name,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
-                  if (isSelected && file != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      file.name,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ),
-            if (isSelected)
-              IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                onPressed: () => _removeDocument(type),
-                color: scheme.error,
-              )
-            else
-              FilledButton.tonal(
-                onPressed: _isUploading ? null : () => _pickDocument(type),
-                child: const Text('Cargar'),
-              ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: isSelected
+                  ? TextButton.icon(
+                      onPressed: () => _removeDocument(type),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Quitar'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: scheme.error,
+                      ),
+                    )
+                  : FilledButton.tonalIcon(
+                      onPressed: _isUploading
+                          ? null
+                          : () => _pickDocument(type),
+                      icon: const Icon(Icons.upload_file, size: 18),
+                      label: const Text('Cargar'),
+                    ),
+            ),
           ],
         ),
       ),

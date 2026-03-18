@@ -30,6 +30,7 @@ enum InstitutionType {
 enum InstitutionStatus {
   pending,
   active,
+  suspended,
   rejected;
 
   String get displayName {
@@ -38,6 +39,8 @@ enum InstitutionStatus {
         return 'Pendiente de verificación';
       case InstitutionStatus.active:
         return 'Activa';
+      case InstitutionStatus.suspended:
+        return 'Suspendida';
       case InstitutionStatus.rejected:
         return 'Rechazada';
     }
@@ -49,6 +52,8 @@ enum InstitutionStatus {
         return InstitutionStatus.pending;
       case 'active':
         return InstitutionStatus.active;
+      case 'suspended':
+        return InstitutionStatus.suspended;
       case 'rejected':
         return InstitutionStatus.rejected;
       default:
@@ -167,6 +172,9 @@ class Institution {
   /// Mensaje de rechazo (si aplica)
   final String? rejectionReason;
 
+  /// Motivo de suspensión (si aplica)
+  final String? suspensionReason;
+
   Institution({
     required this.id,
     required this.name,
@@ -185,6 +193,7 @@ class Institution {
     this.createdAt,
     this.updatedAt,
     this.rejectionReason,
+    this.suspensionReason,
   }) : documents = documents ?? InstitutionDocuments();
 
   factory Institution.fromFirestore(DocumentSnapshot doc) {
@@ -202,12 +211,14 @@ class Institution {
       rectorCellPhone: data['rectorCellPhone'] ?? '',
       email: data['email'] ?? '',
       documents: InstitutionDocuments.fromMap(
-          data['documentsUrls'] as Map<String, dynamic>?),
+        data['documentsUrls'] as Map<String, dynamic>?,
+      ),
       inviteCode: data['inviteCode'] ?? '',
       isActive: data['isActive'] ?? false,
       createdAt: data['createdAt'] as Timestamp?,
       updatedAt: data['updatedAt'] as Timestamp?,
       rejectionReason: data['rejectionReason'] as String?,
+      suspensionReason: data['suspensionReason'] as String?,
     );
   }
 
@@ -229,6 +240,7 @@ class Institution {
       'createdAt': createdAt ?? FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       if (rejectionReason != null) 'rejectionReason': rejectionReason,
+      if (suspensionReason != null) 'suspensionReason': suspensionReason,
     };
   }
 
@@ -250,6 +262,7 @@ class Institution {
     Timestamp? createdAt,
     Timestamp? updatedAt,
     String? rejectionReason,
+    String? suspensionReason,
   }) {
     return Institution(
       id: id ?? this.id,
@@ -269,6 +282,7 @@ class Institution {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rejectionReason: rejectionReason ?? this.rejectionReason,
+      suspensionReason: suspensionReason ?? this.suspensionReason,
     );
   }
 

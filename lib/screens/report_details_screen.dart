@@ -6,12 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import '../services/event_service.dart';
 import '../services/storage_service.dart';
 import '../services/user_service.dart';
 import '../widgets/app_meta_chip.dart';
+import 'create_action_plan_screen.dart';
 import 'full_screen_image_screen.dart';
 
 class ReportDetailsScreen extends StatefulWidget {
@@ -244,6 +246,49 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
       }
     }
     return 'No capturada';
+  }
+
+  DateTime? _planDueDate(Map<String, dynamic> data) {
+    return _asDate(
+      data['dueDate'] ?? data['fechaLimite'] ?? data['targetDate'],
+    );
+  }
+
+  String _planStatusLabel(String raw) {
+    final value = raw.trim().toLowerCase().replaceAll(' ', '_');
+    if (value.contains('curso')) return 'En curso';
+    if (value.contains('ejecut')) return 'Ejecutado';
+    if (value.contains('verif')) return 'Verificado';
+    if (value.contains('cerr')) return 'Cerrado';
+    if (value.contains('venc')) return 'Vencido';
+    return 'Pendiente';
+  }
+
+  ({Color bg, Color fg}) _planStatusColors(String raw, ColorScheme scheme) {
+    final value = raw.trim().toLowerCase().replaceAll(' ', '_');
+    if (value.contains('cerr') || value.contains('verif')) {
+      return (bg: scheme.secondaryContainer, fg: scheme.onSecondaryContainer);
+    }
+    if (value.contains('ejecut')) {
+      return (bg: scheme.tertiaryContainer, fg: scheme.onTertiaryContainer);
+    }
+    if (value.contains('curso')) {
+      return (bg: scheme.primaryContainer, fg: scheme.onPrimaryContainer);
+    }
+    if (value.contains('venc')) {
+      return (bg: scheme.errorContainer, fg: scheme.onErrorContainer);
+    }
+    return (bg: scheme.surfaceContainerHighest, fg: scheme.onSurfaceVariant);
+  }
+
+  Future<void> _openCreateActionPlan() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            CreateActionPlanScreen(eventId: widget.documentId),
+      ),
+    );
   }
 
   Future<void> _copyCaseNumber(String caseNumber) async {
@@ -592,6 +637,181 @@ class _ReportDetailsScreenState extends State<ReportDetailsScreen> {
                       ),
                     ),
                   ),
+                  if (_canManageStatus) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        side: BorderSide(color: scheme.outlineVariant),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Planes de accion asociados',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                FilledButton.tonalIcon(
+                                  onPressed: _openCreateActionPlan,
+                                  icon: const Icon(Icons.playlist_add_outlined),
+                                  label: const Text('Crear plan'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                              stream: FirebaseFirestore.instance
+                                  .collection('planesDeAccion')
+                                  .where(
+                                    'eventoId',
+                                    isEqualTo: widget.documentId,
+                                  )
+                                  .snapshots(),
+                              builder: (context, plansSnapshot) {
+                                if (plansSnapshot.connectionState ==
+                                        ConnectionState.waiting &&
+                                    !plansSnapshot.hasData) {
+                                  return const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    child: LinearProgressIndicator(
+                                      minHeight: 2,
+                                    ),
+                                  );
+                                }
+                                final docs =
+                                    plansSnapshot.data?.docs ??
+                                    const <
+                                      QueryDocumentSnapshot<
+                                        Map<String, dynamic>
+                                      >
+                                    >[];
+                                if (docs.isEmpty) {
+                                  return Text(
+                                    'No hay planes de accion para este caso.',
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                  );
+                                }
+                                final ordered = [...docs]
+                                  ..sort((a, b) {
+                                    final left = _planDueDate(a.data());
+                                    final right = _planDueDate(b.data());
+                                    if (left == null && right == null) return 0;
+                                    if (left == null) return 1;
+                                    if (right == null) return -1;
+                                    return left.compareTo(right);
+                                  });
+                                return Column(
+                                  children: ordered.map((doc) {
+                                    final plan = doc.data();
+                                    final title =
+                                        (plan['title'] ??
+                                                plan['titulo'] ??
+                                                'Plan sin titulo')
+                                            .toString();
+                                    final responsible =
+                                        (plan['responsibleName'] ??
+                                                plan['assignedToName'] ??
+                                                'Sin responsable')
+                                            .toString();
+                                    final dueDate = _planDueDate(plan);
+                                    final statusLabel = _planStatusLabel(
+                                      (plan['status'] ?? plan['estado'] ?? '')
+                                          .toString(),
+                                    );
+                                    final statusColors = _planStatusColors(
+                                      (plan['status'] ?? plan['estado'] ?? '')
+                                          .toString(),
+                                      scheme,
+                                    );
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: scheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: scheme.outlineVariant,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  title,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodyLarge
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Responsable: $responsible',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: scheme
+                                                            .onSurfaceVariant,
+                                                      ),
+                                                ),
+                                                if (dueDate != null)
+                                                  Text(
+                                                    'Fecha limite: ${_dateFormat.format(dueDate)}',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color: scheme
+                                                              .onSurfaceVariant,
+                                                        ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          AppMetaChip(
+                                            icon: Icons.assignment_turned_in,
+                                            label: statusLabel,
+                                            background: statusColors.bg,
+                                            foreground: statusColors.fg,
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (reportData != null &&
                       data['attachmentsPending'] == true) ...[
                     const SizedBox(height: 16),
@@ -971,29 +1191,150 @@ class _TimelineRow extends StatelessWidget {
   }
 }
 
-class _NetworkVideoCard extends StatefulWidget {
+class _NetworkVideoCard extends StatelessWidget {
   final String url;
 
   const _NetworkVideoCard({required this.url});
 
   @override
-  State<_NetworkVideoCard> createState() => _NetworkVideoCardState();
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => _FullScreenVideoScreen(url: url),
+            ),
+          );
+        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 128,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                color: scheme.surface,
+                border: Border.all(color: scheme.outlineVariant),
+              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.black.withValues(alpha: 0.18),
+                            Colors.black.withValues(alpha: 0.28),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Icon(
+                      Icons.play_circle_fill_rounded,
+                      size: 52,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Miniatura no disponible',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Video de evidencia',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Toca para abrir en pantalla completa.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _NetworkVideoCardState extends State<_NetworkVideoCard> {
+class _FullScreenVideoScreen extends StatefulWidget {
+  final String url;
+
+  const _FullScreenVideoScreen({required this.url});
+
+  @override
+  State<_FullScreenVideoScreen> createState() => _FullScreenVideoScreenState();
+}
+
+class _FullScreenVideoScreenState extends State<_FullScreenVideoScreen> {
   late final VideoPlayerController _controller;
+  bool _ready = false;
+  bool _loadError = false;
+  bool _showPlayer = false;
 
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
     _controller.setLooping(true);
-    _controller.setVolume(0);
-    _controller.initialize().then((_) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    _controller
+        .initialize()
+        .then((_) {
+          if (!mounted) return;
+          setState(() {
+            _ready = true;
+          });
+        })
+        .catchError((_) {
+          if (!mounted) return;
+          setState(() {
+            _loadError = true;
+          });
+        });
   }
 
   @override
@@ -1002,52 +1343,139 @@ class _NetworkVideoCardState extends State<_NetworkVideoCard> {
     super.dispose();
   }
 
+  Future<void> _openExternal() async {
+    final uri = Uri.tryParse(widget.url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  void _togglePlayPause() {
+    setState(() {
+      if (!_showPlayer) {
+        _showPlayer = true;
+      }
+      if (_controller.value.isPlaying) {
+        _controller.pause();
+      } else {
+        _controller.play();
+      }
+    });
+  }
+
+  Widget _buildPoster(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.play_circle_fill_rounded,
+                size: 72,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Reproducir video',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 240,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Video de evidencia'),
+        actions: [
+          IconButton(
+            tooltip: 'Abrir externamente',
+            onPressed: _openExternal,
+            icon: const Icon(Icons.open_in_new),
+          ),
+        ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            AspectRatio(
-              aspectRatio: _controller.value.isInitialized
-                  ? _controller.value.aspectRatio
-                  : 16 / 9,
-              child: _controller.value.isInitialized
-                  ? VideoPlayer(_controller)
-                  : Container(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
+      body: Center(
+        child: _loadError
+            ? Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline, color: scheme.error, size: 48),
+                    const SizedBox(height: 10),
+                    Text(
+                      'No se pudo cargar el video en la app.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      textAlign: TextAlign.center,
                     ),
-            ),
-            IconButton(
-              icon: Icon(
-                _controller.value.isPlaying
-                    ? Icons.pause_circle_filled
-                    : Icons.play_circle_fill,
-                size: 52,
-                color: Colors.white,
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _openExternal,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Abrir externamente'),
+                    ),
+                  ],
+                ),
+              )
+            : !_ready
+            ? const CircularProgressIndicator()
+            : Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _showPlayer
+                        ? Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              AspectRatio(
+                                aspectRatio: _controller.value.aspectRatio == 0
+                                    ? 16 / 9
+                                    : _controller.value.aspectRatio,
+                                child: VideoPlayer(_controller),
+                              ),
+                              IconButton(
+                                iconSize: 64,
+                                icon: Icon(
+                                  _controller.value.isPlaying
+                                      ? Icons.pause_circle_filled
+                                      : Icons.play_circle_fill,
+                                ),
+                                color: Colors.white,
+                                onPressed: _togglePlayPause,
+                              ),
+                            ],
+                          )
+                        : InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: _togglePlayPause,
+                            child: _buildPoster(context),
+                          ),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      onPressed: _openExternal,
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Abrir externamente'),
+                    ),
+                  ],
+                ),
               ),
-              onPressed: () {
-                setState(() {
-                  if (_controller.value.isPlaying) {
-                    _controller.pause();
-                  } else {
-                    _controller.play();
-                  }
-                });
-              },
-            ),
-          ],
-        ),
       ),
     );
   }

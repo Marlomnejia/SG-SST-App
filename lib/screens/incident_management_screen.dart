@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../services/event_service.dart';
-import 'incident_detail_screen.dart';
+import 'report_details_screen.dart';
 
 class IncidentManagementScreen extends StatefulWidget {
   const IncidentManagementScreen({super.key});
@@ -395,7 +395,7 @@ class _IncidentManagementScreenState extends State<IncidentManagementScreen> {
             context,
             MaterialPageRoute(
               builder: (context) =>
-                  IncidentDetailScreen(eventDocument: incident),
+                  ReportDetailsScreen(documentId: incident.id),
             ),
           );
         },

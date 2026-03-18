@@ -9,7 +9,6 @@ import '../services/training_service.dart';
 import '../services/user_service.dart';
 import '../widgets/app_skeleton_box.dart';
 import '../widgets/app_meta_chip.dart';
-import '../widgets/notification_permission_banner.dart';
 
 class CapacitacionesScreen extends StatefulWidget {
   const CapacitacionesScreen({super.key});
@@ -30,7 +29,19 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
   String? _institutionId;
   String? _currentUid;
   bool _showCompletedVideos = false;
+  String _scheduledFilter = 'active';
   final Set<String> _savingRsvpTrainingIds = <String>{};
+  final Set<String> _submittedRsvpTrainingIds = <String>{};
+  final Map<String, String> _localRsvpSelection = <String, String>{};
+  static final Map<String, _VideoProgressMetrics> _videoMetricsMemoryCache =
+      <String, _VideoProgressMetrics>{};
+  static final Map<String, Map<String, _VideoProgressState>>
+  _videoProgressMemoryCache = <String, Map<String, _VideoProgressState>>{};
+  static final Map<String, Future<_VideoProgressMetrics>>
+  _videoMetricsFutureCache = <String, Future<_VideoProgressMetrics>>{};
+  static final Map<String, Future<Map<String, _VideoProgressState>>>
+  _videoProgressFutureCache =
+      <String, Future<Map<String, _VideoProgressState>>>{};
 
   @override
   void initState() {
@@ -156,15 +167,14 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
 
           return Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: NotificationPermissionBanner(),
-              ),
               FutureBuilder<_VideoProgressMetrics>(
-                future: _loadVideoProgressMetrics(videoDocs),
+                future: _getVideoProgressMetrics(videoDocs),
                 builder: (context, progressSnap) {
+                  final cacheKey = _videoCacheKey(videoDocs);
+                  final cachedMetrics = _videoMetricsMemoryCache[cacheKey];
                   final metrics =
                       progressSnap.data ??
+                      cachedMetrics ??
                       _VideoProgressMetrics(
                         watchedCount: 0,
                         totalCount: videoDocs.length,
@@ -173,7 +183,10 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
                     watchedCount: metrics.watchedCount,
                     totalCount: metrics.totalCount,
                     loading:
-                        progressSnap.connectionState == ConnectionState.waiting,
+                        progressSnap.connectionState ==
+                            ConnectionState.waiting &&
+                        !progressSnap.hasData &&
+                        cachedMetrics == null,
                   );
                 },
               ),
@@ -232,6 +245,94 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
         .doc(institutionId)
         .collection('trainings')
         .doc(trainingId);
+  }
+
+  String _videoCacheKey(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> videoDocs,
+  ) {
+    final ids = videoDocs.map((doc) => doc.id).toList()..sort();
+    return '${_institutionId ?? ''}|${_currentUid ?? ''}|${ids.join(',')}';
+  }
+
+  Future<_VideoProgressMetrics> _getVideoProgressMetrics(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> videoDocs,
+  ) {
+    final cacheKey = _videoCacheKey(videoDocs);
+    final cached = _videoMetricsMemoryCache[cacheKey];
+    if (cached != null) {
+      return SynchronousFuture<_VideoProgressMetrics>(cached);
+    }
+
+    final pending = _videoMetricsFutureCache[cacheKey];
+    if (pending != null) {
+      return pending;
+    }
+
+    final future = _loadVideoProgressMetrics(videoDocs)
+        .then((value) {
+          _videoMetricsMemoryCache[cacheKey] = value;
+          _videoMetricsFutureCache.remove(cacheKey);
+          return value;
+        })
+        .catchError((error) {
+          _videoMetricsFutureCache.remove(cacheKey);
+          throw error;
+        });
+    _videoMetricsFutureCache[cacheKey] = future;
+    return future;
+  }
+
+  Future<Map<String, _VideoProgressState>> _getVideoProgressState(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> videoDocs,
+  ) {
+    final cacheKey = _videoCacheKey(videoDocs);
+    final cached = _videoProgressMemoryCache[cacheKey];
+    if (cached != null) {
+      return SynchronousFuture<Map<String, _VideoProgressState>>(cached);
+    }
+
+    final pending = _videoProgressFutureCache[cacheKey];
+    if (pending != null) {
+      return pending;
+    }
+
+    final future = _loadVideoProgressState(videoDocs)
+        .then((value) {
+          _videoProgressMemoryCache[cacheKey] = value;
+          _videoProgressFutureCache.remove(cacheKey);
+          return value;
+        })
+        .catchError((error) {
+          _videoProgressFutureCache.remove(cacheKey);
+          throw error;
+        });
+    _videoProgressFutureCache[cacheKey] = future;
+    return future;
+  }
+
+  void _optimisticallyMarkVideoAsWatched(String trainingId) {
+    final prefix = '${_institutionId ?? ''}|${_currentUid ?? ''}|';
+    final now = Timestamp.now();
+    final keys = _videoProgressMemoryCache.keys
+        .where((key) => key.startsWith(prefix))
+        .toList(growable: false);
+    for (final key in keys) {
+      final value = _videoProgressMemoryCache[key];
+      if (value == null || !value.containsKey(trainingId)) continue;
+      final updated = Map<String, _VideoProgressState>.from(value);
+      updated[trainingId] = _VideoProgressState(watched: true, watchedAt: now);
+      _videoProgressMemoryCache[key] = updated;
+      final currentMetrics = _videoMetricsMemoryCache[key];
+      if (currentMetrics != null) {
+        final watchedCount = updated.values
+            .where((entry) => entry.watched)
+            .length;
+        _videoMetricsMemoryCache[key] = _VideoProgressMetrics(
+          watchedCount: watchedCount,
+          totalCount: currentMetrics.totalCount,
+        );
+      }
+    }
   }
 
   Future<_VideoProgressMetrics> _loadVideoProgressMetrics(
@@ -331,7 +432,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
   Widget _buildUpcoming(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> allDocs,
   ) {
-    final docs =
+    final scheduledDocs =
         allDocs
             .where(
               (doc) => (doc.data()['type'] ?? '').toString() == 'scheduled',
@@ -339,390 +440,470 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
             .toList()
           ..sort(_sortScheduledForUser);
 
-    if (docs.isEmpty) {
+    if (scheduledDocs.isEmpty) {
       return _buildEmptyState(
         context,
         icon: Icons.event_busy_outlined,
         title: 'No hay capacitaciones programadas',
-        subtitle: 'Cuando tu institución publique una, aparecerá aquí.',
+        subtitle: 'Cuando tu institucion publique una, aparecera aqui.',
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: docs.length,
-      itemBuilder: (_, index) {
-        final doc = docs[index];
-        final data = doc.data();
-        final scheduled = (data['scheduled'] as Map<String, dynamic>?) ?? {};
-        final mode = (scheduled['mode'] ?? 'presencial').toString();
-        final startAt = scheduled['startAt'] as Timestamp?;
-        final endAt = scheduled['endAt'] as Timestamp?;
-        final topic = (data['topic'] ?? '').toString().trim();
-        final description = (data['description'] ?? '').toString().trim();
-        final place = (scheduled['place'] ?? '').toString().trim();
-        final meetUrl = (scheduled['meetUrl'] ?? '').toString().trim();
-        final requireRsvp = scheduled['requireRsvp'] != false;
-        final rawCapacity = scheduled['capacity'];
-        final capacity = rawCapacity is num
-            ? rawCapacity.toInt()
-            : int.tryParse(rawCapacity?.toString() ?? '');
-        final status = (data['status'] ?? 'published').toString();
-        final publishedAt =
-            (data['publishedAt'] as Timestamp?) ??
-            (data['createdAt'] as Timestamp?);
-        final isCancelled = status == 'cancelled';
-        final rangeText = _formatFriendlyRange(startAt, endAt);
-        final timeBadge = _buildTimeStateBadge(
-          startAt: startAt?.toDate(),
-          endAt: endAt?.toDate(),
-          now: DateTime.now(),
-        );
-        final scheme = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+    bool isPastTraining(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+      final scheduled =
+          (doc.data()['scheduled'] as Map<String, dynamic>?) ?? {};
+      final endAt = scheduled['endAt'] as Timestamp?;
+      if (endAt == null) return false;
+      return endAt.toDate().isBefore(now);
+    }
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 14),
-          elevation: 0.8,
-          clipBehavior: Clip.antiAlias,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: scheme.outline.withValues(alpha: 0.18)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final activeCount = scheduledDocs
+        .where((doc) => !isPastTraining(doc))
+        .length;
+    final pastCount = scheduledDocs.where(isPastTraining).length;
+
+    final docs = scheduledDocs.where((doc) {
+      switch (_scheduledFilter) {
+        case 'active':
+          return !isPastTraining(doc);
+        case 'past':
+          return isPastTraining(doc);
+        default:
+          return true;
+      }
+    }).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
               children: [
-                const _MetaBadgeUser(
-                  icon: Icons.event_available_outlined,
-                  label: 'Sesión programada',
+                ChoiceChip(
+                  label: Text('Activas ($activeCount)'),
+                  selected: _scheduledFilter == 'active',
+                  onSelected: (_) =>
+                      setState(() => _scheduledFilter = 'active'),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        (data['title'] ?? 'Capacitacion').toString(),
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    _StatusBadgeUser(status: status),
-                  ],
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: Text('Finalizadas ($pastCount)'),
+                  selected: _scheduledFilter == 'past',
+                  onSelected: (_) => setState(() => _scheduledFilter = 'past'),
                 ),
-                if (publishedAt != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    '${status == 'published' ? 'Publicada' : 'Creada'}: ${_formatOptionalDate(publishedAt)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _MetaBadgeUser(icon: Icons.schedule, label: rangeText),
-                    _MetaBadgeUser(
-                      icon: mode == 'virtual'
-                          ? Icons.videocam_outlined
-                          : Icons.location_on_outlined,
-                      label: mode == 'virtual' ? 'Virtual' : 'Presencial',
-                    ),
-                    _MetaBadgeUser(
-                      icon: requireRsvp
-                          ? Icons.how_to_reg_outlined
-                          : Icons.info_outline,
-                      label: requireRsvp
-                          ? 'Confirmacion requerida'
-                          : 'Confirmacion opcional',
-                    ),
-                    if (capacity != null && capacity > 0)
-                      _MetaBadgeUser(
-                        icon: Icons.group_outlined,
-                        label: 'Cupos: $capacity',
-                      ),
-                    if (timeBadge != null) timeBadge,
-                  ],
-                ),
-                if (topic.isNotEmpty || description.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest.withValues(
-                        alpha: 0.2,
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: scheme.outline.withValues(alpha: 0.14),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (topic.isNotEmpty)
-                          Text(
-                            topic,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        if (description.isNotEmpty) ...[
-                          if (topic.isNotEmpty) const SizedBox(height: 6),
-                          Text(
-                            description,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-                if (mode == 'virtual' && meetUrl.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.link_rounded,
-                              size: 16,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Enlace de la reunión',
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          meetUrl,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                        ),
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: OutlinedButton.icon(
-                            onPressed: isCancelled
-                                ? null
-                                : () {
-                                    HapticFeedback.selectionClick();
-                                    _openMeetingLink(meetUrl);
-                                  },
-                            icon: const Icon(Icons.open_in_new_rounded),
-                            label: const Text('Abrir reunión'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else if (mode != 'virtual' && place.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.28),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.outline.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.place_outlined,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            place,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: _myRsvpStream(doc.id),
-                  builder: (context, rsvpSnap) {
-                    final rsvp = rsvpSnap.data?.data();
-                    final current = (rsvp?['response'] ?? '').toString();
-                    final respondedAt = rsvp?['respondedAt'] as Timestamp?;
-                    final hasResponded = current.isNotEmpty;
-                    final isSavingResponse = _savingRsvpTrainingIds.contains(
-                      doc.id,
-                    );
-                    final canRespond =
-                        !isCancelled && !hasResponded && !isSavingResponse;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest.withValues(
-                              alpha: 0.18,
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: scheme.outline.withValues(alpha: 0.14),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Tu confirmacion',
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: [
-                                  _rsvpButton(
-                                    doc.id,
-                                    'yes',
-                                    'Asistir',
-                                    current,
-                                    enabled: canRespond,
-                                  ),
-                                  _rsvpButton(
-                                    doc.id,
-                                    'no',
-                                    'No puedo',
-                                    current,
-                                    enabled: canRespond,
-                                  ),
-                                  _rsvpButton(
-                                    doc.id,
-                                    'maybe',
-                                    'Quizas',
-                                    current,
-                                    enabled: canRespond,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                current.isEmpty
-                                    ? 'Estado: sin confirmacion'
-                                    : 'Estado: ${_labelResponse(current)}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                              if (respondedAt != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Registrada: ${_formatOptionalDate(respondedAt)}',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                              if (isSavingResponse) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Guardando confirmacion...',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                              if (hasResponded && !isCancelled) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Tu confirmacion ya fue registrada.',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
-                                ),
-                              ],
-                              if (isCancelled) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Capacitacion cancelada.',
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                      ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: Text('Todas (${scheduledDocs.length})'),
+                  selected: _scheduledFilter == 'all',
+                  onSelected: (_) => setState(() => _scheduledFilter = 'all'),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: docs.isEmpty
+              ? _buildEmptyState(
+                  context,
+                  icon: Icons.filter_alt_off_outlined,
+                  title: 'Sin resultados para este filtro',
+                  subtitle: 'Cambia el filtro para ver otras capacitaciones.',
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: docs.length,
+                  itemBuilder: (_, index) {
+                    final doc = docs[index];
+                    final data = doc.data();
+                    final scheduled =
+                        (data['scheduled'] as Map<String, dynamic>?) ?? {};
+                    final mode = (scheduled['mode'] ?? 'presencial').toString();
+                    final startAt = scheduled['startAt'] as Timestamp?;
+                    final endAt = scheduled['endAt'] as Timestamp?;
+                    final topic = (data['topic'] ?? '').toString().trim();
+                    final description = (data['description'] ?? '')
+                        .toString()
+                        .trim();
+                    final place = (scheduled['place'] ?? '').toString().trim();
+                    final meetUrl = (scheduled['meetUrl'] ?? '')
+                        .toString()
+                        .trim();
+                    final requireRsvp = scheduled['requireRsvp'] != false;
+                    final rawCapacity = scheduled['capacity'];
+                    final capacity = rawCapacity is num
+                        ? rawCapacity.toInt()
+                        : int.tryParse(rawCapacity?.toString() ?? '');
+                    final status = (data['status'] ?? 'published').toString();
+                    final publishedAt =
+                        (data['publishedAt'] as Timestamp?) ??
+                        (data['createdAt'] as Timestamp?);
+                    final isCancelled = status == 'cancelled';
+                    final rangeText = _formatFriendlyRange(startAt, endAt);
+                    final timeBadge = _buildTimeStateBadge(
+                      startAt: startAt?.toDate(),
+                      endAt: endAt?.toDate(),
+                      now: DateTime.now(),
+                    );
+                    final scheme = Theme.of(context).colorScheme;
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      elevation: 0.8,
+                      clipBehavior: Clip.antiAlias,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(
+                          color: scheme.outline.withValues(alpha: 0.18),
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _MetaBadgeUser(
+                              icon: Icons.event_available_outlined,
+                              label: 'Sesion programada',
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    (data['title'] ?? 'Capacitacion')
+                                        .toString(),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                _StatusBadgeUser(status: status),
+                              ],
+                            ),
+                            if (publishedAt != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                '${status == 'published' ? 'Publicada' : 'Creada'}: ${_formatOptionalDate(publishedAt)}',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                _MetaBadgeUser(
+                                  icon: Icons.schedule,
+                                  label: rangeText,
+                                ),
+                                _MetaBadgeUser(
+                                  icon: mode == 'virtual'
+                                      ? Icons.videocam_outlined
+                                      : Icons.location_on_outlined,
+                                  label: mode == 'virtual'
+                                      ? 'Virtual'
+                                      : 'Presencial',
+                                ),
+                                _MetaBadgeUser(
+                                  icon: requireRsvp
+                                      ? Icons.how_to_reg_outlined
+                                      : Icons.info_outline,
+                                  label: requireRsvp
+                                      ? 'Confirmacion requerida'
+                                      : 'Confirmacion opcional',
+                                ),
+                                if (capacity != null && capacity > 0)
+                                  _MetaBadgeUser(
+                                    icon: Icons.group_outlined,
+                                    label: 'Cupos: $capacity',
+                                  ),
+                                if (timeBadge != null) timeBadge,
+                              ],
+                            ),
+                            if (topic.isNotEmpty || description.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: scheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: scheme.outline.withValues(
+                                      alpha: 0.14,
+                                    ),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (topic.isNotEmpty)
+                                      Text(
+                                        topic,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    if (description.isNotEmpty) ...[
+                                      if (topic.isNotEmpty)
+                                        const SizedBox(height: 6),
+                                      Text(
+                                        description,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                            if (meetUrl.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: 0.22),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.link_rounded,
+                                          size: 16,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Enlace de la reunion',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelLarge
+                                                ?.copyWith(
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      meetUrl,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: OutlinedButton.icon(
+                                        onPressed: isCancelled
+                                            ? null
+                                            : () {
+                                                HapticFeedback.selectionClick();
+                                                _openMeetingLink(meetUrl);
+                                              },
+                                        icon: const Icon(
+                                          Icons.open_in_new_rounded,
+                                        ),
+                                        label: const Text('Abrir reunion'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ] else if (place.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest
+                                      .withValues(alpha: 0.28),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Theme.of(context).colorScheme.outline
+                                        .withValues(alpha: 0.18),
+                                  ),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.place_outlined,
+                                      size: 18,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        place,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 10),
+                            StreamBuilder<
+                              DocumentSnapshot<Map<String, dynamic>>
+                            >(
+                              stream: _myRsvpStream(doc.id),
+                              builder: (context, rsvpSnap) {
+                                final responseData = rsvpSnap.data?.data();
+                                final persistedResponse =
+                                    (responseData?['response'] ?? '')
+                                        .toString()
+                                        .trim();
+                                final currentResponse =
+                                    persistedResponse.isNotEmpty
+                                    ? persistedResponse
+                                    : (_localRsvpSelection[doc.id] ?? '');
+                                final hasResponded =
+                                    persistedResponse.isNotEmpty ||
+                                    _submittedRsvpTrainingIds.contains(doc.id);
+                                final isSavingResponse = _savingRsvpTrainingIds
+                                    .contains(doc.id);
+                                final canRespond =
+                                    !isCancelled &&
+                                    !hasResponded &&
+                                    !isSavingResponse;
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        _rsvpButton(
+                                          doc.id,
+                                          'yes',
+                                          'Asistir',
+                                          currentResponse,
+                                          enabled: canRespond,
+                                        ),
+                                        _rsvpButton(
+                                          doc.id,
+                                          'no',
+                                          'No puedo',
+                                          currentResponse,
+                                          enabled: canRespond,
+                                        ),
+                                        _rsvpButton(
+                                          doc.id,
+                                          'maybe',
+                                          'Quizas',
+                                          currentResponse,
+                                          enabled: canRespond,
+                                        ),
+                                      ],
+                                    ),
+                                    if (hasResponded) ...[
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Tu confirmacion: ${_labelResponse(currentResponse)}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: scheme.onSurfaceVariant,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                    ],
+                                    StreamBuilder<
+                                      DocumentSnapshot<Map<String, dynamic>>
+                                    >(
+                                      stream: _myAttendanceStream(doc.id),
+                                      builder: (context, attendanceSnap) {
+                                        final attendanceData = attendanceSnap
+                                            .data
+                                            ?.data();
+                                        final attended =
+                                            attendanceData?['attended'] == true;
+                                        if (!attendanceSnap.hasData ||
+                                            attendanceData == null) {
+                                          return const SizedBox.shrink();
+                                        }
+                                        return Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: 6,
+                                          ),
+                                          child: Text(
+                                            attended
+                                                ? 'Asistencia validada por administracion.'
+                                                : 'Asistencia registrada: no asistio.',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color:
+                                                      scheme.onSurfaceVariant,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
@@ -745,15 +926,20 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
     }
 
     return FutureBuilder<Map<String, _VideoProgressState>>(
-      future: _loadVideoProgressState(docs),
+      future: _getVideoProgressState(docs),
       builder: (context, progressSnap) {
+        final cacheKey = _videoCacheKey(docs);
+        final cachedProgress = _videoProgressMemoryCache[cacheKey];
         if (progressSnap.connectionState == ConnectionState.waiting &&
-            !progressSnap.hasData) {
+            !progressSnap.hasData &&
+            cachedProgress == null) {
           return _buildTrainingsListSkeleton();
         }
 
         final progressByTraining =
-            progressSnap.data ?? const <String, _VideoProgressState>{};
+            progressSnap.data ??
+            cachedProgress ??
+            const <String, _VideoProgressState>{};
         final pendingDocs = docs
             .where((doc) => !(progressByTraining[doc.id]?.watched ?? false))
             .toList();
@@ -871,15 +1057,20 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
     )..sort(_sortByCreatedAtDesc);
 
     return FutureBuilder<Map<String, _VideoProgressState>>(
-      future: _loadVideoProgressState(videoDocs),
+      future: _getVideoProgressState(videoDocs),
       builder: (context, progressSnap) {
+        final cacheKey = _videoCacheKey(videoDocs);
+        final cachedProgress = _videoProgressMemoryCache[cacheKey];
         if (progressSnap.connectionState == ConnectionState.waiting &&
-            !progressSnap.hasData) {
+            !progressSnap.hasData &&
+            cachedProgress == null) {
           return _buildTrainingsListSkeleton();
         }
 
         final progressByTraining =
-            progressSnap.data ?? const <String, _VideoProgressState>{};
+            progressSnap.data ??
+            cachedProgress ??
+            const <String, _VideoProgressState>{};
         final filtered = sorted.where((doc) {
           final type = (doc.data()['type'] ?? '').toString();
           if (type != 'video') return true;
@@ -1379,6 +1570,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
               if (mounted) {
                 setState(() {
                   _savingRsvpTrainingIds.add(trainingId);
+                  _localRsvpSelection[trainingId] = value;
                 });
               }
               try {
@@ -1386,9 +1578,22 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
                   trainingId: trainingId,
                   response: value,
                 );
+                if (mounted) {
+                  setState(() {
+                    _submittedRsvpTrainingIds.add(trainingId);
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Confirmacion registrada correctamente.'),
+                    ),
+                  );
+                }
               } on FirebaseException catch (e) {
                 if (!mounted) return;
                 if (e.code == 'already-exists') {
+                  setState(() {
+                    _submittedRsvpTrainingIds.add(trainingId);
+                  });
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
@@ -1402,6 +1607,9 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
                 final code = e.code.toUpperCase();
                 final message =
                     e.message ?? 'No se pudo registrar tu respuesta.';
+                setState(() {
+                  _localRsvpSelection.remove(trainingId);
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
@@ -1411,6 +1619,9 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
                 );
               } catch (e) {
                 if (!mounted) return;
+                setState(() {
+                  _localRsvpSelection.remove(trainingId);
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('No se pudo guardar confirmacion: $e'),
@@ -1438,6 +1649,7 @@ class _CapacitacionesScreenState extends State<CapacitacionesScreen>
         );
       }
       await _service.markVideoWatched(trainingId);
+      _optimisticallyMarkVideoAsWatched(trainingId);
       if (!mounted) return true;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Video marcado como visto.')),

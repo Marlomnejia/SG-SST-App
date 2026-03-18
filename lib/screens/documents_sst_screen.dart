@@ -150,8 +150,6 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> globalDocs,
     required List<QueryDocumentSnapshot<Map<String, dynamic>>> institutionDocs,
   }) {
-    final globalCount = globalDocs.length;
-    final institutionCount = institutionDocs.length;
     final entries =
         <_DocumentEntry>[
           ...globalDocs.map((doc) => _DocumentEntry(doc: doc, isGlobal: true)),
@@ -203,12 +201,6 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       children: [
-        _buildDocumentsHeader(
-          totalCount: entries.length,
-          globalCount: globalCount,
-          institutionCount: institutionCount,
-        ),
-        const SizedBox(height: 14),
         _buildFiltersPanel(categories),
         const SizedBox(height: 14),
         if (entries.isEmpty)
@@ -529,117 +521,6 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
     );
   }
 
-  Widget _buildDocumentsHeader({
-    required int totalCount,
-    required int globalCount,
-    required int institutionCount,
-  }) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            scheme.primary.withValues(alpha: 0.16),
-            scheme.secondary.withValues(alpha: 0.08),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 52,
-            width: 52,
-            decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              Icons.menu_book_outlined,
-              color: scheme.primary,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppMetaChip(
-                  icon: Icons.auto_stories_outlined,
-                  label: 'Consulta centralizada',
-                  background: scheme.primary.withValues(alpha: 0.1),
-                  foreground: scheme.primary,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Biblioteca SST',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Consulta normativa general y documentos publicados por tu institución.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _heroPill(
-                      label: '$totalCount disponibles',
-                      icon: Icons.description_outlined,
-                    ),
-                    _heroPill(
-                      label: '$globalCount generales',
-                      icon: Icons.public_outlined,
-                    ),
-                    _heroPill(
-                      label: '$institutionCount institucionales',
-                      icon: Icons.school_outlined,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.surface.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: scheme.primary.withValues(alpha: 0.12),
-                    ),
-                  ),
-                  child: Text(
-                    'Encuentra primero la normativa común y luego los documentos internos publicados por tu institución.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildFiltersPanel(List<String> categories) {
     final scheme = Theme.of(context).colorScheme;
 
@@ -739,32 +620,6 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
           foreground: scheme.onSurfaceVariant,
         ),
       ],
-    );
-  }
-
-  Widget _heroPill({required String label, required IconData icon}) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: scheme.primary),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: scheme.primary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

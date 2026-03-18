@@ -7,7 +7,6 @@ import '../services/institution_service.dart';
 import 'documents_admin_screen.dart';
 import 'institution_review_screen.dart';
 import 'super_admin_institutions_screen.dart';
-import '../widgets/notification_permission_banner.dart';
 
 /// Panel de Super Administrador para aprobaciones y gestion global.
 class SuperAdminDashboardScreen extends StatefulWidget {
@@ -109,6 +108,9 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
           final activeCount = institutions
               .where((item) => item.status == InstitutionStatus.active)
               .length;
+          final suspendedCount = institutions
+              .where((item) => item.status == InstitutionStatus.suspended)
+              .length;
           final rejectedCount = institutions
               .where((item) => item.status == InstitutionStatus.rejected)
               .length;
@@ -116,7 +118,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              const NotificationPermissionBanner(),
               _buildHeaderCard(
                 theme,
                 pendingCount: pending.length,
@@ -128,7 +129,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 context,
                 title: 'Resumen global',
                 subtitle:
-                    'Vista general del sistema. Usa la gestión central para revisar instituciones.',
+                    'Vista general del sistema. Usa la gestion central para revisar instituciones.',
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -146,6 +147,12 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                     value: activeCount.toString(),
                     icon: Icons.verified_outlined,
                     color: Colors.green,
+                  ),
+                  _SummaryCard(
+                    label: 'Suspendidas',
+                    value: suspendedCount.toString(),
+                    icon: Icons.pause_circle_outline,
+                    color: Colors.orange.shade700,
                   ),
                   _SummaryCard(
                     label: 'Rechazadas',
@@ -172,9 +179,10 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 icon: Icons.account_balance_outlined,
                 title: 'Gestionar instituciones',
                 subtitle:
-                    'Consulta, filtra y revisa el estado completo de cada institución',
+                    'Consulta, filtra y revisa el estado completo de cada institucion',
                 color: scheme.primary,
                 badgeLabel: 'Principal',
+                pendingCount: pending.length,
                 onTap: _openInstitutionsList,
               ),
               const SizedBox(height: 12),
@@ -182,7 +190,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 icon: Icons.library_books_outlined,
                 title: 'Documentos globales SST',
                 subtitle:
-                    'Gestiona la normativa común para todas las instituciones',
+                    'Gestiona la normativa comun para todas las instituciones',
                 color: scheme.secondary,
                 badgeLabel: 'Clave',
                 onTap: () {
@@ -199,7 +207,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 context,
                 title: 'Instituciones pendientes',
                 subtitle: pending.isEmpty
-                    ? 'No hay solicitudes por revisar en este momento'
+                    ? null
                     : 'Solicitudes que requieren decision del super admin',
               ),
               const SizedBox(height: 12),
@@ -216,28 +224,6 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 24),
-              _buildSectionHeader(
-                context,
-                title: 'Últimas instituciones registradas',
-                subtitle: 'Acceso rapido a los registros mas recientes',
-              ),
-              const SizedBox(height: 12),
-              if (institutions.isEmpty)
-                _buildNoInstitutionsState(theme)
-              else
-                ...institutions
-                    .take(5)
-                    .map(
-                      (institution) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _InstitutionOverviewCard(
-                          institution: institution,
-                          dateFormat: _dateFormat,
-                          onTap: () => _openReview(institution),
-                        ),
-                      ),
-                    ),
             ],
           );
         },
@@ -300,7 +286,7 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
                 Text(
                   pendingCount == 0
                       ? 'No hay solicitudes pendientes. Puedes gestionar documentos globales.'
-                      : 'Tienes $pendingCount solicitud(es) pendiente(s) de revisión.',
+                      : 'Tienes $pendingCount solicitud(es) pendiente(s) de revision.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: Colors.white.withValues(alpha: 0.88),
                   ),
@@ -403,74 +389,18 @@ class _SuperAdminDashboardScreenState extends State<SuperAdminDashboardScreen> {
   Widget _buildPendingEmptyState(ThemeData theme) {
     final scheme = theme.colorScheme;
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: scheme.outlineVariant),
       ),
-      child: Column(
-        children: [
-          Icon(
-            Icons.check_circle_outline,
-            size: 40,
-            color: Colors.green.withValues(alpha: 0.85),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'No hay instituciones pendientes',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Todas las solicitudes han sido procesadas. Mientras tanto, puedes gestionar la normativa global.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AdminDocumentsScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.library_books_outlined),
-            label: const Text('Abrir documentos globales'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoInstitutionsState(ThemeData theme) {
-    final scheme = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.domain_disabled_outlined, size: 40, color: scheme.outline),
-          const SizedBox(height: 12),
-          Text(
-            'Aún no hay instituciones registradas',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+      child: Text(
+        'No hay instituciones pendientes',
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+        textAlign: TextAlign.center,
       ),
     );
   }
@@ -567,6 +497,7 @@ class _ActionCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final String? badgeLabel;
+  final int? pendingCount;
 
   const _ActionCard({
     required this.icon,
@@ -575,11 +506,13 @@ class _ActionCard extends StatelessWidget {
     required this.color,
     required this.onTap,
     this.badgeLabel,
+    this.pendingCount,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final int pending = pendingCount ?? 0;
     return Material(
       color: scheme.surface,
       borderRadius: BorderRadius.circular(18),
@@ -645,6 +578,36 @@ class _ActionCard extends StatelessWidget {
                                   ),
                             ),
                           ),
+                        if (pending > 0) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: pending > 0
+                                  ? scheme.errorContainer
+                                  : scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: pending > 0
+                                    ? scheme.error.withValues(alpha: 0.45)
+                                    : scheme.outlineVariant,
+                              ),
+                            ),
+                            child: Text(
+                              pending > 99 ? '99+' : '$pending',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: pending > 0
+                                        ? scheme.onErrorContainer
+                                        : scheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -760,85 +723,6 @@ class _InstitutionCard extends StatelessWidget {
   }
 }
 
-class _InstitutionOverviewCard extends StatelessWidget {
-  final Institution institution;
-  final DateFormat dateFormat;
-  final VoidCallback onTap;
-
-  const _InstitutionOverviewCard({
-    required this.institution,
-    required this.dateFormat,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final createdDate = institution.createdAt?.toDate();
-
-    return Material(
-      color: scheme.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            children: [
-              Container(
-                height: 40,
-                width: 40,
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.account_balance_outlined,
-                  color: scheme.primary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      institution.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      createdDate != null
-                          ? 'Registro: ${dateFormat.format(createdDate)}'
-                          : 'Registro sin fecha',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              _statusChip(context, institution.status),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 Widget _metaChip(BuildContext context, IconData icon, String label) {
   final scheme = Theme.of(context).colorScheme;
   return Container(
@@ -872,6 +756,10 @@ Widget _statusChip(BuildContext context, InstitutionStatus status) {
     case InstitutionStatus.active:
       color = Colors.green;
       label = 'Activa';
+      break;
+    case InstitutionStatus.suspended:
+      color = Colors.orange.shade700;
+      label = 'Suspendida';
       break;
     case InstitutionStatus.rejected:
       color = scheme.error;

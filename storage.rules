@@ -42,24 +42,83 @@ service firebase.storage {
         ).data.isPublished == true;
     }
 
+    function canAccessEventFiles(eventId) {
+      return firestore.exists(/databases/(default)/documents/eventos/$(eventId)) &&
+        (
+          isAdmin() ||
+          firestore.get(
+            /databases/(default)/documents/eventos/$(eventId)
+          ).data.reportadoPor_uid == request.auth.uid ||
+          firestore.get(
+            /databases/(default)/documents/eventos/$(eventId)
+          ).data.institutionId == userData().institutionId
+        );
+    }
+
+    function canAccessReportFiles(reportId) {
+      return firestore.exists(/databases/(default)/documents/reports/$(reportId)) &&
+        (
+          isAdmin() ||
+          firestore.get(
+            /databases/(default)/documents/reports/$(reportId)
+          ).data.createdBy == request.auth.uid ||
+          firestore.get(
+            /databases/(default)/documents/reports/$(reportId)
+          ).data.institutionId == userData().institutionId
+        );
+    }
+
+    function canAccessActionPlanFiles(planId) {
+      return firestore.exists(/databases/(default)/documents/planesDeAccion/$(planId)) &&
+        (
+          isAdmin() ||
+          isAdminSstForInstitution(
+            firestore.get(
+              /databases/(default)/documents/planesDeAccion/$(planId)
+            ).data.institutionId
+          ) ||
+          firestore.get(
+            /databases/(default)/documents/planesDeAccion/$(planId)
+          ).data.responsibleUid == request.auth.uid
+        );
+    }
+
+    function canAccessInspectionFiles(institutionId, inspectionId) {
+      return firestore.exists(
+          /databases/(default)/documents/institutions/$(institutionId)/inspections/$(inspectionId)
+        ) &&
+        (
+          isAdmin() ||
+          isAdminSstForInstitution(institutionId) ||
+          firestore.get(
+            /databases/(default)/documents/institutions/$(institutionId)/inspections/$(inspectionId)
+          ).data.assignedToUid == request.auth.uid
+        );
+    }
+
     match /users/{userId}/{allPaths=**} {
       allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
       allow write: if signedIn() && request.auth.uid == userId;
     }
 
     match /eventos/{eventId}/{allPaths=**} {
-      allow read: if signedIn();
-      allow write: if signedIn();
+      allow read, write: if signedIn() && canAccessEventFiles(eventId);
     }
 
     match /reports/{reportId}/{allPaths=**} {
-      allow read: if signedIn();
-      allow write: if signedIn();
+      allow read, write: if signedIn() && canAccessReportFiles(reportId);
     }
 
     match /action_plans/{planId}/{allPaths=**} {
+      allow read, write: if signedIn() && canAccessActionPlanFiles(planId);
+    }
+
+    // Documentos del registro inicial de institución (ruta legacy por NIT).
+    // Nota: durante onboarding se necesita leer inmediatamente el archivo
+    // para obtener downloadURL después de la carga.
+    match /institutions/{institutionKey}/documents/{fileName} {
       allow read: if signedIn();
-      allow write: if signedIn();
+      allow write: if signedIn() && request.resource.size < 12 * 1024 * 1024;
     }
 
     match /institutions/{institutionId}/sst_documents/{documentId}/{allPaths=**} {
@@ -72,6 +131,11 @@ service firebase.storage {
       allow write: if signedIn() && (
         isAdmin() || isAdminSstForInstitution(institutionId)
       );
+    }
+
+    match /institutions/{institutionId}/inspections/{inspectionId}/{allPaths=**} {
+      allow read, write: if signedIn() &&
+        canAccessInspectionFiles(institutionId, inspectionId);
     }
 
     match /global_sst_documents/{documentId}/{allPaths=**} {

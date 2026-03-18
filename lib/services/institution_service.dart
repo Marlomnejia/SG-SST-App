@@ -1,9 +1,11 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/institution.dart';
 
 class InstitutionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final Map<String, Stream<Institution?>> _institutionStreams = {};
   Stream<List<Institution>>? _pendingInstitutionsStream;
   Stream<List<Institution>>? _allInstitutionsStream;
@@ -21,36 +23,11 @@ class InstitutionService {
     ).join();
   }
 
-  /// Verifica si un código de invitación ya existe
-  Future<bool> _isCodeUnique(String code) async {
-    final snapshot = await _firestore
-        .collection(_collection)
-        .where('inviteCode', isEqualTo: code)
-        .limit(1)
-        .get();
-    return snapshot.docs.isEmpty;
-  }
-
-  /// Genera un código único verificando que no exista en la base de datos
+  /// Genera un código de invitación.
+  /// Nota: se evita la consulta previa por reglas de lectura en registro inicial.
+  /// El espacio de códigos (32^6) hace la colisión extremadamente improbable.
   Future<String> generateUniqueInviteCode() async {
-    String code;
-    bool isUnique;
-    int attempts = 0;
-    const maxAttempts = 10;
-
-    do {
-      code = _generateInviteCode();
-      isUnique = await _isCodeUnique(code);
-      attempts++;
-    } while (!isUnique && attempts < maxAttempts);
-
-    if (!isUnique) {
-      throw Exception(
-        'No se pudo generar un código único después de $maxAttempts intentos',
-      );
-    }
-
-    return code;
+    return _generateInviteCode();
   }
 
   /// Crea una nueva institución y retorna su ID
@@ -238,26 +215,125 @@ class InstitutionService {
   }
 
   /// Aprueba una institución (cambia status a 'active')
+  Future<_InstitutionActor> _resolveActor() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      return const _InstitutionActor(uid: 'system', role: 'system');
+    }
+
+    try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      final role = (userDoc.data()?['role'] ?? '').toString().trim();
+      return _InstitutionActor(uid: uid, role: role.isEmpty ? 'unknown' : role);
+    } catch (_) {
+      return _InstitutionActor(uid: uid, role: 'unknown');
+    }
+  }
+
+  Map<String, dynamic> _auditEntry({
+    required String status,
+    required _InstitutionActor actor,
+    String? note,
+  }) {
+    return <String, dynamic>{
+      'status': status,
+      'changedAt': Timestamp.now(),
+      'changedBy': actor.uid,
+      'changedByRole': actor.role,
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    };
+  }
+
   Future<void> approveInstitution(String institutionId) async {
+    final actor = await _resolveActor();
     await _firestore.collection(_collection).doc(institutionId).update({
       'status': 'active',
       'isActive': true,
+      'rejectionReason': FieldValue.delete(),
+      'suspensionReason': FieldValue.delete(),
+      'approvedAt': FieldValue.serverTimestamp(),
+      'approvedBy': actor.uid,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'reviewedBy': actor.uid,
+      'reviewedByRole': actor.role,
+      'statusHistory': FieldValue.arrayUnion([
+        _auditEntry(status: 'active', actor: actor),
+      ]),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   /// Rechaza una institución (cambia status a 'rejected')
   Future<void> rejectInstitution(String institutionId, {String? reason}) async {
-    final data = <String, dynamic>{
+    final actor = await _resolveActor();
+    final cleanReason = reason?.trim();
+    await _firestore.collection(_collection).doc(institutionId).update({
       'status': 'rejected',
       'isActive': false,
+      'rejectionReason': (cleanReason == null || cleanReason.isEmpty)
+          ? FieldValue.delete()
+          : cleanReason,
+      'suspensionReason': FieldValue.delete(),
+      'rejectedAt': FieldValue.serverTimestamp(),
+      'rejectedBy': actor.uid,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'reviewedBy': actor.uid,
+      'reviewedByRole': actor.role,
+      'statusHistory': FieldValue.arrayUnion([
+        _auditEntry(status: 'rejected', actor: actor, note: cleanReason),
+      ]),
       'updatedAt': FieldValue.serverTimestamp(),
-    };
-    if (reason != null && reason.isNotEmpty) {
-      data['rejectionReason'] = reason;
-    }
-    await _firestore.collection(_collection).doc(institutionId).update(data);
+    });
   }
+
+  Future<void> suspendInstitution(
+    String institutionId, {
+    String? reason,
+  }) async {
+    final actor = await _resolveActor();
+    final cleanReason = reason?.trim();
+    await _firestore.collection(_collection).doc(institutionId).update({
+      'status': 'suspended',
+      'isActive': false,
+      'suspensionReason': (cleanReason == null || cleanReason.isEmpty)
+          ? FieldValue.delete()
+          : cleanReason,
+      'suspendedAt': FieldValue.serverTimestamp(),
+      'suspendedBy': actor.uid,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'reviewedBy': actor.uid,
+      'reviewedByRole': actor.role,
+      'statusHistory': FieldValue.arrayUnion([
+        _auditEntry(status: 'suspended', actor: actor, note: cleanReason),
+      ]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> reactivateInstitution(String institutionId) async {
+    final actor = await _resolveActor();
+    await _firestore.collection(_collection).doc(institutionId).update({
+      'status': 'active',
+      'isActive': true,
+      'suspensionReason': FieldValue.delete(),
+      'reactivatedAt': FieldValue.serverTimestamp(),
+      'reactivatedBy': actor.uid,
+      'reviewedAt': FieldValue.serverTimestamp(),
+      'reviewedBy': actor.uid,
+      'reviewedByRole': actor.role,
+      'statusHistory': FieldValue.arrayUnion([
+        _auditEntry(status: 'active', actor: actor, note: 'reactivated'),
+      ]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+}
+
+class _InstitutionActor {
+  final String uid;
+  final String role;
+
+  const _InstitutionActor({required this.uid, required this.role});
 }
 
 /// Resultado de validación de código de invitación
