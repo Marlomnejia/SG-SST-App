@@ -1,16 +1,34 @@
-# app
+# EduSST
 
-A new Flutter project.
+Aplicacion movil para la gestion de Seguridad y Salud en el Trabajo (SG-SST) en instituciones educativas.
 
-## Getting Started
+## Tecnologias
 
-This project is a starting point for a Flutter application.
+- Flutter / Dart
+- Firebase Authentication
+- Cloud Firestore
+- Firebase Storage
+- Firebase Cloud Functions
+- Firebase Cloud Messaging (FCM)
+- Google Maps (ubicacion en reportes)
 
-A few resources to get you started if this is your first Flutter project:
+## Ejecucion local
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+1. Instalar Flutter SDK y dependencias de Android.
+2. Clonar el repositorio.
+3. Ejecutar:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter pub get
+```
+
+4. Verificar configuracion Firebase del proyecto (`firebase_options.dart`, `android/app/google-services.json`).
+5. Ejecutar la app:
+
+```bash
+flutter run
+```
+
+## Nota de entrega
+
+Este repositorio contiene el codigo fuente de la version final del proyecto academico EduSST.

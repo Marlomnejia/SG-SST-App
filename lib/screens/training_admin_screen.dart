@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/training_module_model.dart';
-import '../services/notification_service.dart';
 import '../services/training_service.dart';
 import '../services/user_service.dart';
 
@@ -20,7 +19,6 @@ class AdminTrainingScreen extends StatefulWidget {
 class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
   final TrainingService _service = TrainingService();
   final UserService _userService = UserService();
-  final NotificationService _notificationService = NotificationService();
   final DateFormat _dateFormat = DateFormat('dd/MM/yyyy hh:mm a');
   final TextEditingController _searchController = TextEditingController();
   String _combinedFilter = 'all';
@@ -37,13 +35,6 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gestion de capacitaciones'),
-        actions: [
-          IconButton(
-            tooltip: 'Probar notificacion',
-            icon: const Icon(Icons.notifications_active_outlined),
-            onPressed: _diagnoseNotificationSetup,
-          ),
-        ],
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: _service.streamInstitutionTrainingsForAdmin(),
@@ -722,133 +713,6 @@ class _AdminTrainingScreenState extends State<AdminTrainingScreen> {
         const SnackBar(content: Text('No se pudo abrir el video.')),
       );
     }
-  }
-
-  Future<void> _diagnoseNotificationSetup() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No hay sesion activa.')));
-      return;
-    }
-    final userDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-    final data = userDoc.data() ?? {};
-    final institutionId = (data['institutionId'] ?? '').toString();
-    final notificationsEnabled = (data['notificationsEnabled'] ?? true) == true;
-    final myTokens = List<String>.from(data['fcmTokens'] ?? const []);
-
-    int institutionUsers = 0;
-    int eligibleUsers = 0;
-    int usersWithTokens = 0;
-    int institutionTokens = 0;
-    int publishedTrainings = 0;
-
-    if (institutionId.trim().isNotEmpty) {
-      final usersSnap = await FirebaseFirestore.instance
-          .collection('users')
-          .where('institutionId', isEqualTo: institutionId)
-          .get();
-      institutionUsers = usersSnap.size;
-      const allowedRoles = {'user', 'employee'};
-      for (final doc in usersSnap.docs) {
-        final userData = doc.data();
-        final role = (userData['role'] ?? '').toString().trim();
-        if (!allowedRoles.contains(role)) {
-          continue;
-        }
-        final notificationsEnabled =
-            (userData['notificationsEnabled'] as bool?) ?? true;
-        if (!notificationsEnabled) {
-          continue;
-        }
-        eligibleUsers++;
-        final tokens = List<String>.from(userData['fcmTokens'] ?? const []);
-        if (tokens.isNotEmpty) {
-          usersWithTokens++;
-          institutionTokens += tokens.length;
-        }
-      }
-
-      final trainingsSnap = await FirebaseFirestore.instance
-          .collection('institutions')
-          .doc(institutionId)
-          .collection('trainings')
-          .where('status', isEqualTo: 'published')
-          .get();
-      publishedTrainings = trainingsSnap.size;
-    }
-
-    debugPrint('[Notifications][diagnostic] uid=${user.uid}');
-    debugPrint('[Notifications][diagnostic] institutionId=$institutionId');
-    debugPrint(
-      '[Notifications][diagnostic] myNotificationsEnabled=$notificationsEnabled myTokens=${myTokens.length}',
-    );
-    debugPrint(
-      '[Notifications][diagnostic] institutionUsers=$institutionUsers eligibleUsers=$eligibleUsers usersWithTokens=$usersWithTokens totalTokens=$institutionTokens',
-    );
-    debugPrint(
-      '[Notifications][diagnostic] publishedTrainings=$publishedTrainings',
-    );
-
-    if (!mounted) return;
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Diagnostico de notificaciones'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('institutionId: $institutionId'),
-                Text('Tu switch de notificaciones: $notificationsEnabled'),
-                Text('Tus tokens FCM: ${myTokens.length}'),
-                const SizedBox(height: 8),
-                Text('Usuarios en la institucion: $institutionUsers'),
-                Text('Usuarios objetivo (user/employee): $eligibleUsers'),
-                Text('Usuarios con token: $usersWithTokens'),
-                Text('Tokens totales en institucion: $institutionTokens'),
-                Text('Capacitaciones publicadas: $publishedTrainings'),
-                const SizedBox(height: 10),
-                const Text(
-                  'Backend: Cloud Functions (training_published, reminders 24h/1h, training_cancelled). Si no estan desplegadas, no llegaran notificaciones.',
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cerrar'),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                final ok = await _notificationService.enableForUser(user.uid);
-                if (!mounted || !dialogContext.mounted) return;
-                Navigator.pop(dialogContext);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      ok
-                          ? 'Token actualizado. Revisa logs del diagnostico.'
-                          : 'Permiso denegado o token no disponible.',
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Actualizar token'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Future<void> _cancelFromList(String trainingId) async {

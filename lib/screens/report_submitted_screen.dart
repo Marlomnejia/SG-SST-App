@@ -85,9 +85,8 @@ class ReportSubmittedScreen extends StatelessWidget {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
+                Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const MyReportsScreen()),
-                  (route) => false,
                 );
               },
               child: const Text('Ver estado'),

@@ -14,6 +14,13 @@ class InstitutionService {
   static const String _chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   static const int _codeLength = 6;
 
+  bool _isSoftDeleted(Map<String, dynamic> data) {
+    final value = data['deletedAt'];
+    if (value == null) return false;
+    if (value is String) return value.trim().isNotEmpty;
+    return true;
+  }
+
   /// Genera un codigo de invitacion unico de 6 caracteres
   String _generateInviteCode() {
     final random = Random.secure();
@@ -130,7 +137,7 @@ class InstitutionService {
         .where('nit', isEqualTo: nit.trim())
         .limit(1)
         .get();
-    return snapshot.docs.isNotEmpty;
+    return snapshot.docs.any((doc) => !_isSoftDeleted(doc.data()));
   }
 
   /// Valida un codigo de invitacion y retorna los datos de la institucion
@@ -194,6 +201,7 @@ class InstitutionService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
+              .where((doc) => !_isSoftDeleted(doc.data()))
               .map((doc) => Institution.fromFirestore(doc))
               .toList(),
         )
@@ -208,6 +216,7 @@ class InstitutionService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
+              .where((doc) => !_isSoftDeleted(doc.data()))
               .map((doc) => Institution.fromFirestore(doc))
               .toList(),
         )

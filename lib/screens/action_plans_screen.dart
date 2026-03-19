@@ -361,6 +361,9 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
     final needsValidation = _isManager && status == 'ejecutado';
     final requiresAdjustment =
         verificationStatus == 'requiere_ajuste' && status == 'en_curso';
+    final waitingValidation = status == 'ejecutado' && !requiresAdjustment;
+    final canUpdateProgress =
+        isMine && !_isClosedStatus(status) && !waitingValidation;
     final hasExecutionDetails =
         executionNote.isNotEmpty ||
         executionEvidence.isNotEmpty ||
@@ -698,20 +701,49 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
             ],
             if (isMine && !_isClosedStatus(status)) ...[
               const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.tonalIcon(
-                  onPressed: () => _showProgressDialog(doc),
-                  icon: const Icon(Icons.update_outlined, size: 18),
-                  label: Text(
-                    requiresAdjustment
-                        ? 'Corregir y reenviar'
-                        : status == 'ejecutado'
-                        ? 'Actualizar avance'
-                        : 'Reportar avance',
+              if (canUpdateProgress)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => _showProgressDialog(doc),
+                    icon: const Icon(Icons.update_outlined, size: 18),
+                    label: Text(
+                      requiresAdjustment ? 'Corregir y reenviar' : 'Reportar avance',
+                    ),
                   ),
                 ),
-              ),
+              if (!canUpdateProgress)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.hourglass_top_rounded,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Plan enviado. Espera validacion del administrador.',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
             if (needsValidation) ...[
               const SizedBox(height: 12),
@@ -1250,6 +1282,30 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
   Future<void> _showProgressDialog(QueryDocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>;
     final currentStatus = _normalizedStatus(data);
+    final verificationStatus = (data['verificationStatus'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    final requiresAdjustment =
+        verificationStatus == 'requiere_ajuste' && currentStatus == 'en_curso';
+    final isPendingValidation = currentStatus == 'ejecutado' && !requiresAdjustment;
+    if (isPendingValidation) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este plan ya fue enviado. Espera la validacion del administrador.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final List<String> allowedStatuses = switch (currentStatus) {
+      'pendiente' => const ['en_curso', 'ejecutado'],
+      'en_curso' => const ['en_curso', 'ejecutado'],
+      _ => const ['en_curso'],
+    };
     final noteController = TextEditingController(
       text: (data['executionNote'] ?? '').toString(),
     );
@@ -1260,9 +1316,9 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
       data['executionAttachments'],
     );
     final newAttachments = <ReportAttachmentInput>[];
-    var selectedStatus = currentStatus == 'ejecutado'
-        ? 'ejecutado'
-        : 'en_curso';
+    var selectedStatus = allowedStatuses.contains(currentStatus)
+        ? currentStatus
+        : allowedStatuses.first;
     var noteRequiredError = false;
 
     final confirmed = await showDialog<bool>(
@@ -1282,16 +1338,16 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
                       labelText: 'Estado de ejecucion',
                       border: OutlineInputBorder(),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'en_curso',
-                        child: Text('En curso'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'ejecutado',
-                        child: Text('Ejecutado'),
-                      ),
-                    ],
+                    items: allowedStatuses
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(
+                              value == 'ejecutado' ? 'Ejecutado' : 'En curso',
+                            ),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (value) {
                       if (value != null) {
                         setDialogState(() => selectedStatus = value);
@@ -1509,14 +1565,16 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  TextField(
+                  TextFormField(
                     controller: noteController,
                     maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Nota de validacion',
+                    decoration: InputDecoration(
+                      labelText: 'Nota de validacion *',
                       hintText: 'Resume la revision realizada.',
                       border: OutlineInputBorder(),
+                      helperText: 'Campo obligatorio',
                     ),
+                    onChanged: (_) => setDialogState(() {}),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -1555,7 +1613,9 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
               child: const Text('Cancelar'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
+              onPressed: noteController.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
               child: const Text('Guardar'),
             ),
           ],
@@ -1568,18 +1628,6 @@ class _ActionPlansScreenState extends State<ActionPlansScreen> {
     noteController.dispose();
     evidenceController.dispose();
     if (confirmed != true) return;
-
-    if (note.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Agrega una nota para dejar trazabilidad de la validacion.',
-          ),
-        ),
-      );
-      return;
-    }
 
     final payload = <String, dynamic>{
       'updatedAt': FieldValue.serverTimestamp(),

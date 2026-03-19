@@ -88,7 +88,7 @@ class VerificationPendingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Te notificaremos por correo electronico cuando se active tu cuenta. Mientras tanto, podras consultar el estado desde tu perfil.',
+                  'Recibiras una notificacion en la aplicacion cuando se active tu cuenta. Mientras tanto, podras consultar el estado desde tu perfil.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

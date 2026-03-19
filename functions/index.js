@@ -34,33 +34,247 @@ async function collectTokens(querySnapshot) {
   return [...uniqueTokens];
 }
 
+function normalizeKey(value) {
+  return String(value || "").trim().toLowerCase().replaceAll(" ", "_");
+}
+
+function normalizeRole(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isInstitutionAdminRole(role) {
+  const normalized = normalizeRole(role);
+  return (
+    normalized === "admin_sst" ||
+    normalized === "adminsst" ||
+    normalized === "admin"
+  );
+}
+
+function timestampToMillis(value) {
+  if (!value) return null;
+  if (typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return null;
+}
+
+function formatDateTimeLabel(value) {
+  const millis = timestampToMillis(value);
+  if (!millis) return "";
+  const date = new Date(millis);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${d}/${m}/${y} ${hh}:${mm}`;
+}
+
+function normalizeReportStatus(raw) {
+  const normalized = normalizeKey(raw);
+  if (normalized.includes("revisi")) return "en_revision";
+  if (normalized.includes("proceso")) return "en_proceso";
+  if (normalized.includes("solucion")) return "cerrado";
+  if (normalized.includes("cerrad")) return "cerrado";
+  if (normalized.includes("rechaz")) return "rechazado";
+  if (normalized.includes("report")) return "reportado";
+  return normalized || "reportado";
+}
+
+function reportStatusLabel(raw) {
+  switch (normalizeReportStatus(raw)) {
+    case "reportado":
+      return "Reportado";
+    case "en_revision":
+      return "En revision";
+    case "en_proceso":
+      return "En proceso";
+    case "cerrado":
+      return "Cerrado";
+    case "rechazado":
+      return "Rechazado";
+    default:
+      return String(raw || "Reportado");
+  }
+}
+
+function normalizeActionPlanStatus(raw) {
+  const normalized = normalizeKey(raw);
+  if (normalized.includes("curso")) return "en_curso";
+  if (normalized.includes("ejecut")) return "ejecutado";
+  if (normalized.includes("verif")) return "verificado";
+  if (normalized.includes("cerr")) return "cerrado";
+  return normalized || "pendiente";
+}
+
+function normalizeInspectionStatus(raw) {
+  const normalized = normalizeKey(raw);
+  if (normalized.includes("progress") || normalized.includes("curso")) {
+    return "in_progress";
+  }
+  if (normalized.includes("find") || normalized.includes("hallazgo")) {
+    return "completed_with_findings";
+  }
+  if (normalized.includes("complet") || normalized.includes("cerrad")) {
+    return "completed";
+  }
+  if (normalized.includes("cancel")) {
+    return "cancelled";
+  }
+  return normalized || "scheduled";
+}
+
+function isInvalidTokenErrorCode(code) {
+  return (
+    code === "messaging/registration-token-not-registered" ||
+    code === "messaging/invalid-registration-token"
+  );
+}
+
+async function cleanupInvalidTokens(tokens) {
+  if (!tokens.length) return;
+  const firestore = admin.firestore();
+  for (const token of tokens) {
+    try {
+      const users = await firestore
+        .collection("users")
+        .where("fcmTokens", "array-contains", token)
+        .get();
+      if (users.empty) continue;
+      const batch = firestore.batch();
+      users.forEach((userDoc) => {
+        batch.set(
+          userDoc.ref,
+          {
+            fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      });
+      await batch.commit();
+      console.log(
+        `[FCM][cleanup] Token invalido eliminado de ${users.size} perfil(es).`
+      );
+    } catch (e) {
+      console.error("[FCM][cleanup] Error limpiando token invalido:", e);
+    }
+  }
+}
+
 async function sendNotification(tokens, payload) {
-  if (!tokens.length) {
+  const uniqueTokens = [...new Set(tokens.filter((token) => !!token))];
+  if (!uniqueTokens.length) {
     console.log("[FCM] No hay tokens para enviar notificacion.");
-    return null;
+    return { successCount: 0, failureCount: 0 };
   }
+  const normalizedData = {};
+  const rawData = payload.data || {};
+  Object.keys(rawData).forEach((key) => {
+    const value = rawData[key];
+    normalizedData[String(key)] = value == null ? "" : String(value);
+  });
   const chunks = [];
-  for (let i = 0; i < tokens.length; i += 500) {
-    chunks.push(tokens.slice(i, i + 500));
+  for (let i = 0; i < uniqueTokens.length; i += 500) {
+    chunks.push(uniqueTokens.slice(i, i + 500));
   }
+  let totalSuccess = 0;
+  let totalFailure = 0;
+  const invalidTokens = new Set();
   for (const chunk of chunks) {
-    const response = await admin.messaging().sendMulticast({
+    const response = await admin.messaging().sendEachForMulticast({
       tokens: chunk,
       notification: payload.notification,
-      data: payload.data || {},
+      data: normalizedData,
+      android: {
+        priority: "high",
+        ttl: 24 * 60 * 60 * 1000,
+        notification: {
+          channelId: "sst_alerts",
+          priority: "high",
+          sound: "default",
+          defaultVibrateTimings: true,
+        },
+      },
     });
+    totalSuccess += response.successCount || 0;
+    totalFailure += response.failureCount || 0;
     console.log(
       `[FCM] Envio chunk size=${chunk.length} success=${response.successCount} failure=${response.failureCount}`
     );
+    if (response.failureCount > 0 && Array.isArray(response.responses)) {
+      response.responses.forEach((result, index) => {
+        if (!result.success && result.error) {
+          const code = String(result.error.code || "");
+          console.log(
+            `[FCM][error] token=${chunk[index]} code=${code} message=${result.error.message}`
+          );
+          if (isInvalidTokenErrorCode(code)) {
+            invalidTokens.add(chunk[index]);
+          }
+        }
+      });
+    }
   }
-  return null;
+  if (invalidTokens.size > 0) {
+    await cleanupInvalidTokens([...invalidTokens]);
+  }
+  return {
+    successCount: totalSuccess,
+    failureCount: totalFailure,
+    invalidTokenCount: invalidTokens.size,
+  };
+}
+
+async function sendTopicNotification(topic, payload) {
+  const normalizedTopic = String(topic || "").trim();
+  if (!normalizedTopic) {
+    return { successCount: 0, failureCount: 0 };
+  }
+
+  const normalizedData = {};
+  const rawData = payload.data || {};
+  Object.keys(rawData).forEach((key) => {
+    const value = rawData[key];
+    normalizedData[String(key)] = value == null ? "" : String(value);
+  });
+
+  try {
+    const messageId = await admin.messaging().send({
+      topic: normalizedTopic,
+      notification: payload.notification,
+      data: normalizedData,
+      android: {
+        priority: "high",
+        ttl: 24 * 60 * 60 * 1000,
+        notification: {
+          channelId: "sst_alerts",
+          priority: "high",
+          sound: "default",
+          defaultVibrateTimings: true,
+        },
+      },
+    });
+    console.log(`[FCM][topic] topic=${normalizedTopic} messageId=${messageId}`);
+    return { successCount: 1, failureCount: 0 };
+  } catch (e) {
+    console.error(`[FCM][topic] Error enviando a topic=${normalizedTopic}:`, e);
+    return { successCount: 0, failureCount: 1 };
+  }
 }
 
 async function collectInstitutionUserTokens(
   institutionId,
   {
     allowedRoles = ["user", "employee"],
-    includeDisabled = false,
+    includeDisabled = true,
   } = {}
 ) {
   if (!institutionId) return [];
@@ -74,7 +288,9 @@ async function collectInstitutionUserTokens(
     .get();
 
   const normalizedRoles = new Set(
-    (allowedRoles || []).map((role) => String(role || "").trim())
+    (allowedRoles || []).map((role) =>
+      String(role || "").trim().toLowerCase()
+    )
   );
   const uniqueTokens = new Set();
   let matchedRoles = 0;
@@ -82,17 +298,18 @@ async function collectInstitutionUserTokens(
 
   usersSnapshot.forEach((doc) => {
     const data = doc.data() || {};
-    const role = String(data.role || "").trim();
+    const role = String(data.role || "").trim().toLowerCase();
     if (normalizedRoles.size > 0 && !normalizedRoles.has(role)) {
       return;
     }
     matchedRoles += 1;
 
     const notificationsEnabled = data.notificationsEnabled !== false;
-    if (!includeDisabled && !notificationsEnabled) {
+    if (notificationsEnabled) {
+      enabledUsers += 1;
+    } else if (!includeDisabled) {
       return;
     }
-    enabledUsers += 1;
 
     const list = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
     for (const token of list) {
@@ -115,9 +332,10 @@ async function collectUserTokensByUid(uid) {
     return [];
   }
   const data = userSnap.data() || {};
-  if (data.notificationsEnabled !== true) {
-    console.log(`[FCM] Usuario ${uid} tiene notificaciones desactivadas.`);
-    return [];
+  if (data.notificationsEnabled === false) {
+    console.log(
+      `[FCM] Usuario ${uid} con notificationsEnabled=false. Se enviara si tiene tokens.`
+    );
   }
   const tokens = await collectTokens({
     forEach(callback) {
@@ -126,6 +344,100 @@ async function collectUserTokensByUid(uid) {
   });
   console.log(`[FCM] uid=${uid} tokens_directos=${tokens.length}`);
   return tokens;
+}
+
+async function collectInstitutionAdminTokens(institutionId) {
+  if (!institutionId) return [];
+  const usersRef = admin.firestore().collection("users");
+  const [institutionUsers, superAdmins] = await Promise.all([
+    usersRef.where("institutionId", "==", institutionId).get(),
+    usersRef.where("role", "==", "admin").get(),
+  ]);
+  const tokenSet = new Set();
+  const snapshots = [institutionUsers, superAdmins];
+  for (const snapshot of snapshots) {
+    snapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      const role = normalizeRole(data.role);
+      if (snapshot === institutionUsers && !isInstitutionAdminRole(role)) {
+        return;
+      }
+      const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
+      for (const token of tokens) {
+        if (token) tokenSet.add(token);
+      }
+    });
+  }
+  return [...tokenSet];
+}
+
+async function collectSuperAdminTokens() {
+  // Evita depender de coincidencia exacta de role (ej: "admin ", "Admin")
+  // y tolera variantes usadas en algunos perfiles legacy.
+  const snap = await admin.firestore().collection("users").get();
+  const tokenSet = new Set();
+  let matched = 0;
+  snap.forEach((doc) => {
+    const data = doc.data() || {};
+    const role = normalizeRole(data.role);
+    const roleKey = normalizeKey(data.role).replaceAll("-", "_");
+    const isSuperAdmin =
+      role === "admin" ||
+      roleKey === "super_admin" ||
+      roleKey === "superadmin" ||
+      roleKey === "super_administrador";
+    if (!isSuperAdmin) return;
+    matched += 1;
+    const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
+    for (const token of tokens) {
+      if (token) tokenSet.add(token);
+    }
+  });
+  const tokens = [...tokenSet];
+  console.log(
+    `[FCM][super_admin_tokens] usersTotal=${snap.size} matched=${matched} tokens=${tokens.length}`
+  );
+  return tokens;
+}
+
+async function collectInstitutionRoleTokens(
+  institutionId,
+  allowedRoles = ["admin_sst", "adminsst", "admin"]
+) {
+  if (!institutionId) return [];
+  const roleSet = new Set(
+    (allowedRoles || []).map((role) => normalizeRole(role))
+  );
+  const usersSnap = await admin
+    .firestore()
+    .collection("users")
+    .where("institutionId", "==", institutionId)
+    .get();
+  const tokenSet = new Set();
+  usersSnap.forEach((doc) => {
+    const data = doc.data() || {};
+    const role = normalizeRole(data.role);
+    if (!roleSet.has(role)) return;
+    const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
+    for (const token of tokens) {
+      if (token) tokenSet.add(token);
+    }
+  });
+  return [...tokenSet];
+}
+
+function labelRsvpResponse(value) {
+  const normalized = normalizeKey(value);
+  if (normalized === "yes" || normalized === "si" || normalized === "asistir") {
+    return "Asistira";
+  }
+  if (normalized === "no" || normalized.includes("no_puedo")) {
+    return "No puede asistir";
+  }
+  if (normalized === "maybe" || normalized === "quizas" || normalized === "tal_vez") {
+    return "Quizas";
+  }
+  return String(value || "Sin respuesta");
 }
 
 function normalizeEmail(value) {
@@ -328,39 +640,30 @@ exports.reassignExpiredTrainings = onSchedule("every 24 hours", async () => {
 
 exports.notifyNewEvent = onDocumentCreated("eventos/{eventId}", async (event) => {
   const data = event.data ? event.data.data() : {};
+  if (String(data.reportId || "").trim().length > 0) {
+    // Reportes estructurados notifican desde reports/{reportId}
+    // para evitar duplicados en admin_sst.
+    return null;
+  }
   const tipo = data.tipo || "Evento";
   const categoria = data.categoria || "Sin categoria";
   const lugar = data.lugar || "Sin lugar";
+  const severidad = normalizeKey(data.severidad);
+  const isCritical =
+    severidad === "grave" ||
+    severidad === "alta" ||
+    severidad === "critical" ||
+    severidad === "critica";
   const institutionId = data.institutionId || null;
-
-  const usersRef = admin.firestore().collection("users");
-  const adminSnapshots = [];
-
-  if (institutionId) {
-    const institutionAdmins = await usersRef
-      .where("institutionId", "==", institutionId)
-      .where("notificationsEnabled", "==", true)
-      .where("role", "==", "admin_sst")
-      .get();
-    adminSnapshots.push(institutionAdmins);
-
-    const superAdmins = await usersRef
-      .where("notificationsEnabled", "==", true)
-      .where("role", "==", "admin")
-      .get();
-    adminSnapshots.push(superAdmins);
-  } else {
-    const adminsSnapshot = await usersRef
-      .where("role", "in", ["admin", "admin_sst"])
-      .where("notificationsEnabled", "==", true)
-      .get();
-    adminSnapshots.push(adminsSnapshot);
-  }
-
   let tokens = [];
-  for (const snap of adminSnapshots) {
-    const snapTokens = await collectTokens(snap);
-    tokens = [...new Set([...tokens, ...snapTokens])];
+  if (institutionId) {
+    tokens = await collectInstitutionAdminTokens(institutionId);
+  } else {
+    const usersRef = admin.firestore().collection("users");
+    const adminsSnapshot = await usersRef
+      .where("role", "in", ["admin", "admin_sst", "adminsst"])
+      .get();
+    tokens = await collectTokens(adminsSnapshot);
   }
 
   console.log(
@@ -369,18 +672,130 @@ exports.notifyNewEvent = onDocumentCreated("eventos/{eventId}", async (event) =>
 
   return sendNotification(tokens, {
     notification: {
-      title: "Nuevo reporte SG-SST",
+      title: isCritical ? "Alerta critica SG-SST" : "Nuevo reporte SG-SST",
       body: `${tipo} - ${categoria} (${lugar})`,
     },
     data: {
       eventId: event.params.eventId,
-      type: "event_created",
+      type: isCritical ? "critical_event_created" : "event_created",
+      severity: severidad,
       ...(institutionId ? { institutionId: String(institutionId) } : {}),
     },
   });
 });
 
+exports.notifyReportCreated = onDocumentCreated(
+  "reports/{reportId}",
+  async (event) => {
+    const data = event.data ? event.data.data() : {};
+    const institutionId = String(data.institutionId || "").trim();
+    const reportType = String(data.reportType || "Reporte SG-SST").trim();
+    const eventType = String(data.eventType || "Incidente").trim();
+    const location = data.location || {};
+    const place = String(location.placeName || location.area || "").trim();
+    const placeLabel = place.length > 0 ? place : "Sin ubicacion";
+    const severity = normalizeKey(data.severity);
+    const isCritical =
+      severity === "grave" ||
+      severity === "alta" ||
+      severity === "critical" ||
+      severity === "critica";
+
+    let tokens = [];
+    if (institutionId) {
+      tokens = await collectInstitutionAdminTokens(institutionId);
+    } else {
+      const adminsSnapshot = await admin
+        .firestore()
+        .collection("users")
+        .where("role", "in", ["admin", "admin_sst", "adminsst"])
+        .get();
+      tokens = await collectTokens(adminsSnapshot);
+    }
+
+    console.log(
+      `[FCM][report_created] reportId=${event.params.reportId} institutionId=${institutionId || "none"} tokens=${tokens.length}`
+    );
+
+    return sendNotification(tokens, {
+      notification: {
+        title: isCritical ? "Alerta critica SG-SST" : "Nuevo reporte SG-SST",
+        body: `${eventType} - ${reportType} (${placeLabel})`,
+      },
+      data: {
+        type: isCritical ? "critical_event_created" : "event_created",
+        reportId: event.params.reportId,
+        institutionId,
+        severity,
+      },
+    });
+  }
+);
+
+exports.notifyReportStatusChanged = onDocumentUpdated(
+  "reports/{reportId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const beforeStatus = normalizeReportStatus(before.status || before.estado);
+    const afterStatus = normalizeReportStatus(after.status || after.estado);
+
+    if (beforeStatus === afterStatus) {
+      return null;
+    }
+
+    const reporterUid = String(after.createdBy || before.createdBy || "").trim();
+    if (!reporterUid) {
+      return null;
+    }
+
+    const history = Array.isArray(after.statusHistory) ? after.statusHistory : [];
+    const latest = history.length > 0 ? history[history.length - 1] : null;
+    const changedBy = String(latest?.changedBy || "").trim();
+
+    if (changedBy && changedBy === reporterUid) {
+      return null;
+    }
+
+    const tokens = await collectUserTokensByUid(reporterUid);
+    if (!tokens.length) {
+      return null;
+    }
+
+    const caseNumber = String(after.caseNumber || event.params.reportId).trim();
+    const label = reportStatusLabel(afterStatus);
+    const note = String(latest?.note || "").trim();
+    const body = note
+      ? `Caso ${caseNumber}: ${label}. ${note}`
+      : `Caso ${caseNumber}: ${label}.`;
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Actualizacion de reporte",
+        body,
+      },
+      data: {
+        type: "report_status_changed",
+        reportId: event.params.reportId,
+        caseNumber,
+        status: afterStatus,
+        institutionId: String(after.institutionId || before.institutionId || ""),
+      },
+    });
+  }
+);
+
 exports.queueInstitutionPendingEmail = onDocumentCreated(
+  "institutions/{institutionId}",
+  async (event) => {
+    console.log(
+      "[MAIL][institution_pending] Envio por correo deshabilitado por configuracion."
+    );
+    return null;
+  }
+);
+
+exports.notifyInstitutionPendingPush = onDocumentCreated(
   "institutions/{institutionId}",
   async (event) => {
     const data = event.data ? event.data.data() : {};
@@ -390,81 +805,72 @@ exports.queueInstitutionPendingEmail = onDocumentCreated(
     }
 
     const institutionId = event.params.institutionId;
-    const institutionName = String(data.name || "tu institucion").trim();
-    const contactEmail = normalizeEmail(data.email);
-    const inviteCode = String(data.inviteCode || "").trim();
+    const institutionName = String(data.name || "Institucion").trim();
+    const tokens = await collectSuperAdminTokens();
+    const payload = {
+      notification: {
+        title: "Nueva institucion pendiente",
+        body: `${institutionName} requiere validacion.`,
+      },
+      data: {
+        type: "institution_pending",
+        institutionId,
+        institutionName,
+      },
+    };
 
-    const subject = "Registro recibido - Validacion de institucion SG-SST";
-    const text =
-      `Hola.\n\n` +
-      `Recibimos el registro de la institucion "${institutionName}". ` +
-      `Tu solicitud esta en estado PENDIENTE de validacion por Super Admin.\n\n` +
-      (inviteCode
-        ? `Codigo de invitacion (se habilita al aprobar): ${inviteCode}\n\n`
-        : "") +
-      `Te notificaremos por este medio cuando sea aprobada.\n\n` +
-      `EduSST`;
-    const html =
-      `<p>Hola.</p>` +
-      `<p>Recibimos el registro de la institucion <b>${institutionName}</b>. ` +
-      `Tu solicitud esta en estado <b>PENDIENTE</b> de validacion por Super Admin.</p>` +
-      (inviteCode
-        ? `<p>Codigo de invitacion (se habilita al aprobar): <b>${inviteCode}</b></p>`
-        : "") +
-      `<p>Te notificaremos por este medio cuando sea aprobada.</p>` +
-      `<p><b>EduSST</b></p>`;
+    const tokenResult = await sendNotification(tokens, payload);
+    if ((tokenResult.successCount || 0) > 0) {
+      return tokenResult;
+    }
 
-    return queueInstitutionEmails({
-      institutionId,
-      institutionName,
-      subject,
-      text,
-      html,
-      extraEmails: contactEmail ? [contactEmail] : [],
-      reason: "institution_pending",
-    });
+    console.log(
+      "[FCM][institution_pending] Sin envios por token. Usando fallback topic=role_admin."
+    );
+    return sendTopicNotification("role_admin", payload);
   }
 );
 
 exports.queueInstitutionApprovedEmail = onDocumentUpdated(
   "institutions/{institutionId}",
   async (event) => {
+    console.log(
+      "[MAIL][institution_approved] Envio por correo deshabilitado por configuracion."
+    );
+    return null;
+  }
+);
+
+exports.notifyInstitutionApprovedPush = onDocumentUpdated(
+  "institutions/{institutionId}",
+  async (event) => {
     const before = event.data.before.data() || {};
     const after = event.data.after.data() || {};
     const beforeStatus = String(before.status || "").trim().toLowerCase();
     const afterStatus = String(after.status || "").trim().toLowerCase();
-
     if (beforeStatus === afterStatus || afterStatus !== "active") {
       return null;
     }
 
     const institutionId = event.params.institutionId;
     const institutionName = String(after.name || "tu institucion").trim();
-    const contactEmail = normalizeEmail(after.email);
-    const inviteCode = String(after.inviteCode || "").trim();
+    const tokens = await collectInstitutionRoleTokens(institutionId, [
+      "admin_sst",
+      "adminsst",
+      "user",
+      "employee",
+    ]);
 
-    const subject = "Institucion aprobada - SG-SST activo";
-    const text =
-      `Hola.\n\n` +
-      `La institucion "${institutionName}" fue APROBADA y ya se encuentra activa en EduSST.\n\n` +
-      (inviteCode ? `Codigo de invitacion: ${inviteCode}\n\n` : "") +
-      `Ya puedes ingresar y gestionar los modulos del sistema.\n\n` +
-      `EduSST`;
-    const html =
-      `<p>Hola.</p>` +
-      `<p>La institucion <b>${institutionName}</b> fue <b>APROBADA</b> y ya se encuentra activa en EduSST.</p>` +
-      (inviteCode ? `<p>Codigo de invitacion: <b>${inviteCode}</b></p>` : "") +
-      `<p>Ya puedes ingresar y gestionar los modulos del sistema.</p>` +
-      `<p><b>EduSST</b></p>`;
-
-    return queueInstitutionEmails({
-      institutionId,
-      institutionName,
-      subject,
-      text,
-      html,
-      extraEmails: contactEmail ? [contactEmail] : [],
-      reason: "institution_approved",
+    return sendNotification(tokens, {
+      notification: {
+        title: "Institucion aprobada",
+        body: `${institutionName} ya esta activa en EduSST.`,
+      },
+      data: {
+        type: "institution_approved",
+        institutionId,
+        institutionName,
+      },
     });
   }
 );
@@ -627,6 +1033,223 @@ exports.notifyTrainingPublishedOnUpdate = onDocumentUpdated(
   }
 );
 
+exports.notifyTrainingRsvpCreated = onDocumentCreated(
+  "institutions/{institutionId}/trainings/{trainingId}/responses/{userId}",
+  async (event) => {
+    const institutionId = event.params.institutionId;
+    const trainingId = event.params.trainingId;
+    const responseData = event.data ? event.data.data() : {};
+
+    const trainingSnap = await admin
+      .firestore()
+      .collection("institutions")
+      .doc(institutionId)
+      .collection("trainings")
+      .doc(trainingId)
+      .get();
+    const trainingData = trainingSnap.exists ? trainingSnap.data() || {} : {};
+    if (String(trainingData.status || "").trim().toLowerCase() === "cancelled") {
+      return null;
+    }
+
+    const title = String(trainingData.title || "Capacitacion SST").trim();
+    const userName = String(
+      responseData.userName || responseData.userEmail || event.params.userId
+    ).trim();
+    const responseLabel = labelRsvpResponse(responseData.response);
+    const roleTokens = await collectInstitutionRoleTokens(institutionId, [
+      "admin_sst",
+      "adminsst",
+      "admin",
+    ]);
+    const createdByUid = String(trainingData.createdBy || "").trim();
+    const createdByTokens = await collectUserTokensByUid(createdByUid);
+    const tokens = [...new Set([...roleTokens, ...createdByTokens])];
+    console.log(
+      `[FCM][RSVP][create] institutionId=${institutionId} trainingId=${trainingId} roleTokens=${roleTokens.length} createdByTokens=${createdByTokens.length} totalTokens=${tokens.length}`
+    );
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Nueva confirmacion de asistencia",
+        body: `${userName}: ${responseLabel} en "${title}".`,
+      },
+      data: {
+        type: "training_rsvp_created",
+        institutionId,
+        trainingId,
+        userId: event.params.userId,
+        response: String(responseData.response || ""),
+      },
+    });
+  }
+);
+
+exports.notifyTrainingRsvpUpdated = onDocumentUpdated(
+  "institutions/{institutionId}/trainings/{trainingId}/responses/{userId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const previousResponse = String(before.response || "").trim().toLowerCase();
+    const currentResponse = String(after.response || "").trim().toLowerCase();
+    if (!currentResponse || currentResponse === previousResponse) {
+      return null;
+    }
+
+    const institutionId = event.params.institutionId;
+    const trainingId = event.params.trainingId;
+    const userId = event.params.userId;
+
+    const trainingSnap = await admin
+      .firestore()
+      .collection("institutions")
+      .doc(institutionId)
+      .collection("trainings")
+      .doc(trainingId)
+      .get();
+    const trainingData = trainingSnap.exists ? trainingSnap.data() || {} : {};
+    if (String(trainingData.status || "").trim().toLowerCase() === "cancelled") {
+      return null;
+    }
+
+    const title = String(trainingData.title || "Capacitacion SST").trim();
+    const userName = String(
+      after.userName || after.userEmail || userId
+    ).trim();
+    const responseLabel = labelRsvpResponse(after.response);
+    const roleTokens = await collectInstitutionRoleTokens(institutionId, [
+      "admin_sst",
+      "adminsst",
+      "admin",
+    ]);
+    const createdByUid = String(trainingData.createdBy || "").trim();
+    const createdByTokens = await collectUserTokensByUid(createdByUid);
+    const tokens = [...new Set([...roleTokens, ...createdByTokens])];
+    console.log(
+      `[FCM][RSVP][update] institutionId=${institutionId} trainingId=${trainingId} roleTokens=${roleTokens.length} createdByTokens=${createdByTokens.length} totalTokens=${tokens.length}`
+    );
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Confirmacion de asistencia actualizada",
+        body: `${userName}: ${responseLabel} en "${title}".`,
+      },
+      data: {
+        type: "training_rsvp_updated",
+        institutionId,
+        trainingId,
+        userId,
+        response: String(after.response || ""),
+      },
+    });
+  }
+);
+
+exports.notifyTrainingVideoWatchedOnCreate = onDocumentCreated(
+  "institutions/{institutionId}/trainings/{trainingId}/progress/{userId}",
+  async (event) => {
+    const progressData = event.data ? event.data.data() : {};
+    if (progressData.watched !== true) return null;
+
+    const institutionId = event.params.institutionId;
+    const trainingId = event.params.trainingId;
+    const userId = event.params.userId;
+
+    const [trainingSnap, userSnap] = await Promise.all([
+      admin
+        .firestore()
+        .collection("institutions")
+        .doc(institutionId)
+        .collection("trainings")
+        .doc(trainingId)
+        .get(),
+      admin.firestore().collection("users").doc(userId).get(),
+    ]);
+
+    const trainingData = trainingSnap.exists ? trainingSnap.data() || {} : {};
+    if (String(trainingData.status || "").trim().toLowerCase() === "cancelled") {
+      return null;
+    }
+    const title = String(trainingData.title || "Capacitacion SST").trim();
+    const userData = userSnap.exists ? userSnap.data() || {} : {};
+    const userName = String(
+      userData.displayName || userData.email || userId
+    ).trim();
+
+    const tokens = await collectInstitutionRoleTokens(institutionId, [
+      "admin_sst",
+      "adminsst",
+    ]);
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Video completado",
+        body: `${userName} marco como visto "${title}".`,
+      },
+      data: {
+        type: "training_video_watched",
+        institutionId,
+        trainingId,
+        userId,
+      },
+    });
+  }
+);
+
+exports.notifyTrainingVideoWatchedOnUpdate = onDocumentUpdated(
+  "institutions/{institutionId}/trainings/{trainingId}/progress/{userId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    if (before.watched === true || after.watched !== true) {
+      return null;
+    }
+
+    const institutionId = event.params.institutionId;
+    const trainingId = event.params.trainingId;
+    const userId = event.params.userId;
+
+    const [trainingSnap, userSnap] = await Promise.all([
+      admin
+        .firestore()
+        .collection("institutions")
+        .doc(institutionId)
+        .collection("trainings")
+        .doc(trainingId)
+        .get(),
+      admin.firestore().collection("users").doc(userId).get(),
+    ]);
+
+    const trainingData = trainingSnap.exists ? trainingSnap.data() || {} : {};
+    if (String(trainingData.status || "").trim().toLowerCase() === "cancelled") {
+      return null;
+    }
+    const title = String(trainingData.title || "Capacitacion SST").trim();
+    const userData = userSnap.exists ? userSnap.data() || {} : {};
+    const userName = String(
+      userData.displayName || userData.email || userId
+    ).trim();
+
+    const tokens = await collectInstitutionRoleTokens(institutionId, [
+      "admin_sst",
+      "adminsst",
+    ]);
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Video completado",
+        body: `${userName} marco como visto "${title}".`,
+      },
+      data: {
+        type: "training_video_watched",
+        institutionId,
+        trainingId,
+        userId,
+      },
+    });
+  }
+);
+
 exports.notifyDocumentPublishedOnCreate = onDocumentCreated(
   "institutions/{institutionId}/documents/{documentId}",
   async (event) => {
@@ -680,6 +1303,426 @@ exports.notifyDocumentPublishedOnUpdate = onDocumentUpdated(
   }
 );
 
+exports.notifyActionPlanAssignedOnCreate = onDocumentCreated(
+  "planesDeAccion/{planId}",
+  async (event) => {
+    const data = event.data ? event.data.data() : {};
+    const responsibleUid = String(data.responsibleUid || "").trim();
+    if (!responsibleUid) return null;
+
+    const title = String(data.title || "Plan de accion").trim();
+    const dueLabel = formatDateTimeLabel(data.dueDate || data.fechaLimite);
+    const dueText = dueLabel ? ` Fecha limite: ${dueLabel}.` : "";
+    const body = `Se te asigno "${title}".${dueText}`;
+    const tokens = await collectUserTokensByUid(responsibleUid);
+
+    console.log(
+      `[FCM][action_plan_assigned] planId=${event.params.planId} responsibleUid=${responsibleUid} tokens=${tokens.length}`
+    );
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Nuevo plan de accion",
+        body,
+      },
+      data: {
+        type: "action_plan_assigned",
+        planId: event.params.planId,
+        originReportId: String(data.originReportId || data.eventoId || ""),
+        institutionId: String(data.institutionId || ""),
+      },
+    });
+  }
+);
+
+exports.notifyActionPlanReadyForValidation = onDocumentUpdated(
+  "planesDeAccion/{planId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const beforeStatus = normalizeActionPlanStatus(
+      before.status || before.estado
+    );
+    const afterStatus = normalizeActionPlanStatus(after.status || after.estado);
+    if (beforeStatus === afterStatus || afterStatus !== "ejecutado") {
+      return null;
+    }
+
+    const assignedByUid = String(after.assignedBy || "").trim();
+    const institutionId = String(after.institutionId || "").trim();
+    const planId = event.params.planId;
+    const title = String(after.title || "Plan de accion").trim();
+
+    const tokenSet = new Set();
+    if (assignedByUid) {
+      const assignedByTokens = await collectUserTokensByUid(assignedByUid);
+      for (const token of assignedByTokens) tokenSet.add(token);
+    }
+    if (institutionId) {
+      const adminTokens = await collectInstitutionAdminTokens(institutionId);
+      for (const token of adminTokens) tokenSet.add(token);
+    }
+
+    const tokens = [...tokenSet];
+    if (!tokens.length) return null;
+
+    console.log(
+      `[FCM][action_plan_validation] planId=${planId} institutionId=${institutionId} tokens=${tokens.length}`
+    );
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Plan pendiente de validacion",
+        body: `El plan "${title}" fue marcado como ejecutado.`,
+      },
+      data: {
+        type: "action_plan_pending_validation",
+        planId,
+        originReportId: String(after.originReportId || after.eventoId || ""),
+        institutionId,
+      },
+    });
+  }
+);
+
+exports.notifyActionPlanDeadlineReminders = onSchedule(
+  "every 60 minutes",
+  async () => {
+    const nowMs = Date.now();
+    const firestore = admin.firestore();
+    const [pendingSnap, progressSnap] = await Promise.all([
+      firestore.collection("planesDeAccion").where("status", "==", "pendiente").get(),
+      firestore.collection("planesDeAccion").where("status", "==", "en_curso").get(),
+    ]);
+    const docs = [...pendingSnap.docs, ...progressSnap.docs];
+    const userTokenCache = new Map();
+    const adminTokenCache = new Map();
+
+    for (const doc of docs) {
+      const data = doc.data() || {};
+      const dueMs = timestampToMillis(data.dueDate || data.fechaLimite);
+      if (!dueMs) continue;
+
+      const status = normalizeActionPlanStatus(data.status || data.estado);
+      if (status === "cerrado" || status === "verificado") continue;
+
+      const flags = data.reminderFlags || {};
+      const responsibleUid = String(data.responsibleUid || "").trim();
+      const institutionId = String(data.institutionId || "").trim();
+      const title = String(data.title || "Plan de accion").trim();
+
+      let changed = false;
+      const should72h = shouldSendReminder(dueMs, nowMs, 72, 60);
+      const should24h = shouldSendReminder(dueMs, nowMs, 24, 60);
+      const shouldOverdue = dueMs <= nowMs;
+
+      const getResponsibleTokens = async () => {
+        if (!responsibleUid) return [];
+        if (!userTokenCache.has(responsibleUid)) {
+          userTokenCache.set(
+            responsibleUid,
+            await collectUserTokensByUid(responsibleUid)
+          );
+        }
+        return userTokenCache.get(responsibleUid) || [];
+      };
+
+      if (should72h && !flags.sent72h) {
+        const tokens = await getResponsibleTokens();
+        await sendNotification(tokens, {
+          notification: {
+            title: "Recordatorio de plan de accion",
+            body: `"${title}" vence en 72 horas.`,
+          },
+          data: {
+            type: "action_plan_due_72h",
+            planId: doc.id,
+            institutionId,
+          },
+        });
+        flags.sent72h = admin.firestore.FieldValue.serverTimestamp();
+        changed = true;
+      }
+
+      if (should24h && !flags.sent24h) {
+        const tokens = await getResponsibleTokens();
+        await sendNotification(tokens, {
+          notification: {
+            title: "Plan proximo a vencer",
+            body: `"${title}" vence en 24 horas.`,
+          },
+          data: {
+            type: "action_plan_due_24h",
+            planId: doc.id,
+            institutionId,
+          },
+        });
+        flags.sent24h = admin.firestore.FieldValue.serverTimestamp();
+        changed = true;
+      }
+
+      if (shouldOverdue && !flags.sentOverdue) {
+        const tokenSet = new Set();
+        const responsibleTokens = await getResponsibleTokens();
+        for (const token of responsibleTokens) tokenSet.add(token);
+        if (institutionId) {
+          if (!adminTokenCache.has(institutionId)) {
+            adminTokenCache.set(
+              institutionId,
+              await collectInstitutionAdminTokens(institutionId)
+            );
+          }
+          const adminTokens = adminTokenCache.get(institutionId) || [];
+          for (const token of adminTokens) tokenSet.add(token);
+        }
+        await sendNotification([...tokenSet], {
+          notification: {
+            title: "Plan vencido",
+            body: `"${title}" supero la fecha limite.`,
+          },
+          data: {
+            type: "action_plan_overdue",
+            planId: doc.id,
+            institutionId,
+          },
+        });
+        flags.sentOverdue = admin.firestore.FieldValue.serverTimestamp();
+        changed = true;
+      }
+
+      if (changed) {
+        await doc.ref.set(
+          { reminderFlags: flags, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+      }
+    }
+
+    return null;
+  }
+);
+
+exports.notifyInspectionAssignedOnCreate = onDocumentCreated(
+  "institutions/{institutionId}/inspections/{inspectionId}",
+  async (event) => {
+    const data = event.data ? event.data.data() : {};
+    const assignedToUid = String(data.assignedToUid || "").trim();
+    if (!assignedToUid) return null;
+
+    const tokens = await collectUserTokensByUid(assignedToUid);
+    const title = String(data.title || "Inspeccion SST").trim();
+    const whenLabel = formatDateTimeLabel(data.scheduledAt);
+    const whenText = whenLabel ? ` Programada: ${whenLabel}.` : "";
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Nueva inspeccion asignada",
+        body: `"${title}".${whenText}`,
+      },
+      data: {
+        type: "inspection_assigned",
+        inspectionId: event.params.inspectionId,
+        institutionId: event.params.institutionId,
+      },
+    });
+  }
+);
+
+exports.notifyInspectionAssignmentChanged = onDocumentUpdated(
+  "institutions/{institutionId}/inspections/{inspectionId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const beforeUid = String(before.assignedToUid || "").trim();
+    const afterUid = String(after.assignedToUid || "").trim();
+    if (!afterUid || beforeUid === afterUid) return null;
+
+    const tokens = await collectUserTokensByUid(afterUid);
+    const title = String(after.title || "Inspeccion SST").trim();
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Inspeccion reasignada",
+        body: `Ahora eres responsable de "${title}".`,
+      },
+      data: {
+        type: "inspection_reassigned",
+        inspectionId: event.params.inspectionId,
+        institutionId: event.params.institutionId,
+      },
+    });
+  }
+);
+
+exports.notifyInspectionStatusUpdates = onDocumentUpdated(
+  "institutions/{institutionId}/inspections/{inspectionId}",
+  async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const beforeStatus = normalizeInspectionStatus(before.status);
+    const afterStatus = normalizeInspectionStatus(after.status);
+    if (beforeStatus === afterStatus) return null;
+
+    const inspectionId = event.params.inspectionId;
+    const institutionId = event.params.institutionId;
+    const title = String(after.title || "Inspeccion SST").trim();
+    const assignedToUid = String(after.assignedToUid || "").trim();
+    const createdBy = String(after.createdBy || "").trim();
+    const tokenSet = new Set();
+
+    if (afterStatus === "cancelled" && assignedToUid) {
+      const assignedTokens = await collectUserTokensByUid(assignedToUid);
+      for (const token of assignedTokens) tokenSet.add(token);
+    }
+
+    if (
+      (afterStatus === "completed" || afterStatus === "completed_with_findings") &&
+      createdBy
+    ) {
+      const creatorTokens = await collectUserTokensByUid(createdBy);
+      for (const token of creatorTokens) tokenSet.add(token);
+    }
+
+    const tokens = [...tokenSet];
+    if (!tokens.length) return null;
+
+    let body = `La inspeccion "${title}" actualizo su estado.`;
+    let type = "inspection_status_updated";
+    if (afterStatus === "cancelled") {
+      body = `La inspeccion "${title}" fue cancelada.`;
+      type = "inspection_cancelled";
+    } else if (afterStatus === "completed_with_findings") {
+      body = `Finalizo "${title}" con hallazgos.`;
+      type = "inspection_completed_with_findings";
+    } else if (afterStatus === "completed") {
+      body = `Finalizo "${title}" sin hallazgos.`;
+      type = "inspection_completed";
+    }
+
+    return sendNotification(tokens, {
+      notification: {
+        title: "Actualizacion de inspeccion",
+        body,
+      },
+      data: {
+        type,
+        inspectionId,
+        institutionId,
+        status: afterStatus,
+      },
+    });
+  }
+);
+
+exports.notifyInspectionReminders = onSchedule("every 30 minutes", async () => {
+  const firestore = admin.firestore();
+  const nowMs = Date.now();
+  const [scheduledSnap, inProgressSnap] = await Promise.all([
+    firestore.collectionGroup("inspections").where("status", "==", "scheduled").get(),
+    firestore
+      .collectionGroup("inspections")
+      .where("status", "==", "in_progress")
+      .get(),
+  ]);
+  const docs = [...scheduledSnap.docs, ...inProgressSnap.docs];
+  const userTokenCache = new Map();
+  const adminTokenCache = new Map();
+
+  for (const doc of docs) {
+    const data = doc.data() || {};
+    const institutionId = doc.ref.parent.parent ? doc.ref.parent.parent.id : "";
+    const assignedToUid = String(data.assignedToUid || "").trim();
+    if (!assignedToUid) continue;
+
+    const scheduledMs = timestampToMillis(data.scheduledAt || data.dueAt);
+    const dueMs = timestampToMillis(data.dueAt || data.scheduledAt);
+    if (!scheduledMs || !dueMs) continue;
+
+    const flags = data.reminderFlags || {};
+    const title = String(data.title || "Inspeccion SST").trim();
+    const should24h = shouldSendReminder(scheduledMs, nowMs, 24, 30);
+    const should1h = shouldSendReminder(scheduledMs, nowMs, 1, 20);
+    const shouldOverdue = dueMs <= nowMs;
+    let changed = false;
+
+    if (!userTokenCache.has(assignedToUid)) {
+      userTokenCache.set(
+        assignedToUid,
+        await collectUserTokensByUid(assignedToUid)
+      );
+    }
+    const assignedTokens = userTokenCache.get(assignedToUid) || [];
+
+    if (should24h && !flags.sent24h) {
+      await sendNotification(assignedTokens, {
+        notification: {
+          title: "Inspeccion programada",
+          body: `"${title}" inicia en 24 horas.`,
+        },
+        data: {
+          type: "inspection_reminder_24h",
+          inspectionId: doc.id,
+          institutionId,
+        },
+      });
+      flags.sent24h = admin.firestore.FieldValue.serverTimestamp();
+      changed = true;
+    }
+
+    if (should1h && !flags.sent1h) {
+      await sendNotification(assignedTokens, {
+        notification: {
+          title: "Recordatorio de inspeccion",
+          body: `"${title}" inicia en 1 hora.`,
+        },
+        data: {
+          type: "inspection_reminder_1h",
+          inspectionId: doc.id,
+          institutionId,
+        },
+      });
+      flags.sent1h = admin.firestore.FieldValue.serverTimestamp();
+      changed = true;
+    }
+
+    if (shouldOverdue && !flags.sentOverdue) {
+      const tokenSet = new Set(assignedTokens);
+      if (institutionId) {
+        if (!adminTokenCache.has(institutionId)) {
+          adminTokenCache.set(
+            institutionId,
+            await collectInstitutionAdminTokens(institutionId)
+          );
+        }
+        const adminTokens = adminTokenCache.get(institutionId) || [];
+        for (const token of adminTokens) tokenSet.add(token);
+      }
+      await sendNotification([...tokenSet], {
+        notification: {
+          title: "Inspeccion vencida",
+          body: `"${title}" supero su fecha limite.`,
+        },
+        data: {
+          type: "inspection_overdue",
+          inspectionId: doc.id,
+          institutionId,
+        },
+      });
+      flags.sentOverdue = admin.firestore.FieldValue.serverTimestamp();
+      changed = true;
+    }
+
+    if (changed) {
+      await doc.ref.set(
+        { reminderFlags: flags, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    }
+  }
+
+  return null;
+});
+
 exports.notifyActionPlanStatusUpdates = onDocumentUpdated(
   "planesDeAccion/{planId}",
   async (event) => {
@@ -700,7 +1743,7 @@ exports.notifyActionPlanStatusUpdates = onDocumentUpdated(
 
     if (
       afterVerification === "requiere_ajuste" &&
-      (beforeVerification !== "requiere_ajuste" || beforeStatus !== afterStatus)
+      beforeVerification !== "requiere_ajuste"
     ) {
       payload = {
         notification: {

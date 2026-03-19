@@ -33,6 +33,7 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
   bool _loading = true;
   String? _error;
   String? _role;
+  final Map<String, bool> _localReadState = <String, bool>{};
 
   @override
   void initState() {
@@ -259,8 +260,13 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
         ? '${document.fileSizeKb} KB'
         : 'Tamano no disponible';
     final accent = entry.isGlobal ? scheme.secondary : scheme.primary;
+    final readStateKey = _readStateCacheKey(
+      documentId: document.id,
+      isGlobal: entry.isGlobal,
+    );
 
     return Card(
+      key: ValueKey('doc_card_$readStateKey'),
       margin: const EdgeInsets.only(bottom: 14),
       elevation: 0,
       color: scheme.surface,
@@ -405,7 +411,9 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
               ),
               builder: (context, readSnap) {
                 final readData = readSnap.data?.data();
-                final isRead = readData?['read'] == true;
+                final isRead =
+                    readData?['read'] == true ||
+                    (_localReadState[readStateKey] ?? false);
                 final readAt = readData?['readAt'] as Timestamp?;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -651,6 +659,11 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
   }
 
   Future<void> _markAsRead(String documentId, {required bool isGlobal}) async {
+    final readStateKey = _readStateCacheKey(
+      documentId: documentId,
+      isGlobal: isGlobal,
+    );
+    setState(() => _localReadState[readStateKey] = true);
     try {
       await _service.markAsRead(documentId, isGlobal: isGlobal);
       if (!mounted) return;
@@ -658,11 +671,21 @@ class _DocumentsSstScreenState extends State<DocumentsSstScreen> {
         const SnackBar(content: Text('Documento marcado como leido.')),
       );
     } catch (e) {
+      if (mounted) {
+        setState(() => _localReadState.remove(readStateKey));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No se pudo marcar como leido: $e')),
       );
     }
+  }
+
+  String _readStateCacheKey({
+    required String documentId,
+    required bool isGlobal,
+  }) {
+    return '${isGlobal ? 'global' : 'institutional'}_$documentId';
   }
 
   Future<void> _openUrl(String rawUrl, {required LaunchMode mode}) async {

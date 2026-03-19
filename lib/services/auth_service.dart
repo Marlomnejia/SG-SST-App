@@ -330,6 +330,8 @@ class AuthService {
     try {
       await _institutionService.updateInstitution(institutionId, {
         'isActive': false,
+        'status': 'rejected',
+        'rejectionReason': 'Registro incompleto o interrumpido',
         'deletedAt': DateTime.now().toIso8601String(),
       });
     } catch (_) {

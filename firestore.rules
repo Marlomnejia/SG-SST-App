@@ -2,41 +2,42 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // FunciÃ³n helper para verificar autenticaciÃ³n
+    // Funcion helper para verificar autenticacion
     function isAuthenticated() {
       return request.auth != null;
     }
     
-    // FunciÃ³n helper para obtener datos del usuario
+    // Funcion helper para obtener datos del usuario
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
     
-    // FunciÃ³n helper para verificar rol
+    // Funcion helper para verificar rol
     function hasRole(role) {
       return isAuthenticated() && getUserData().role == role;
     }
     
-    // FunciÃ³n helper para verificar instituciÃ³n
+    // Funcion helper para verificar institucion
     function belongsToInstitution(institutionId) {
       return isAuthenticated() && getUserData().institutionId == institutionId;
     }
 
-    // Datos de instituciÃ³n
+    // Datos de institucion
     function getInstitutionData(institutionId) {
       return get(/databases/$(database)/documents/institutions/$(institutionId)).data;
     }
 
-    // Estado de instituciÃ³n activa (compat: usa status o isActive)
+    // Estado de institucion activa (compat: usa status o isActive)
     function isInstitutionActive(institutionId) {
       let inst = getInstitutionData(institutionId);
       return inst != null && (inst.status == 'active' || inst.isActive == true);
     }
     
-    // FunciÃ³n helper para verificar si es admin de la instituciÃ³n
+    // Funcion helper para verificar si es admin de la institucion
     function isInstitutionAdmin(institutionId) {
       let userData = getUserData();
-      return userData.role == 'admin_sst' && userData.institutionId == institutionId;
+      return (userData.role == 'admin_sst' || userData.role == 'adminsst') &&
+        userData.institutionId == institutionId;
     }
     
     // Super admin del sistema
@@ -44,14 +45,15 @@ service cloud.firestore {
       return hasRole('admin');
     }
     
-    // Admin de instituciÃ³n
+    // Admin de institucion
     function isAdminSst() {
-      return hasRole('admin_sst');
+      return isAuthenticated() &&
+        (getUserData().role == 'admin_sst' || getUserData().role == 'adminsst');
     }
 
-    // ColecciÃ³n de instituciones
+    // Coleccion de instituciones
     match /institutions/{institutionId} {
-      // Lectura: usuarios autenticados de la misma instituciÃ³n o super admin
+      // Lectura: usuarios autenticados de la misma institucion o super admin
       allow read: if isAuthenticated() && (
         belongsToInstitution(institutionId) || 
         isSuperAdmin()
@@ -60,8 +62,14 @@ service cloud.firestore {
       // Crear: cualquier usuario autenticado (para registro inicial)
       allow create: if isAuthenticated();
       
-      // Actualizar: solo admin de la instituciÃ³n o super admin
+      // Actualizar: solo admin de la institucion o super admin
       allow update: if isSuperAdmin() || (
+        isInstitutionAdmin(institutionId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'inviteCode',
+          'updatedAt'
+        ])
+      ) || (
         isInstitutionAdmin(institutionId) &&
         request.resource.data.status == resource.data.status &&
         request.resource.data.isActive == resource.data.isActive &&
@@ -87,9 +95,9 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // ColecciÃ³n de usuarios
+    // Coleccion de usuarios
     match /users/{userId} {
-      // Lectura: el propio usuario, admin de su instituciÃ³n, o super admin
+      // Lectura: el propio usuario, admin de su institucion, o super admin
       allow read: if isAuthenticated() && (
         request.auth.uid == userId ||
         isSuperAdmin() ||
@@ -129,10 +137,37 @@ service cloud.firestore {
             'campus',
             'phone',
             'notificationsEnabled',
+            'notificationSetupCompleted',
+            'notificationSetupVersion',
             'fcmTokens',
             'updatedAt',
             'email',
             'institutionId'
+          ])
+        ) ||
+        (
+          // Promocion controlada: user/employee -> admin_sst al registrar institucion
+          request.auth.uid == userId &&
+          resource.data.role in ['user', 'employee'] &&
+          request.resource.data.role in ['admin_sst', 'adminsst'] &&
+          resource.data.institutionId == null &&
+          request.resource.data.institutionId is string &&
+          exists(/databases/$(database)/documents/institutions/$(request.resource.data.institutionId)) &&
+          get(/databases/$(database)/documents/institutions/$(request.resource.data.institutionId)).data.email == request.resource.data.email &&
+          request.resource.data.email == resource.data.email &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'email',
+            'displayName',
+            'photoUrl',
+            'role',
+            'institutionId',
+            'jobTitle',
+            'campus',
+            'phone',
+            'notificationsEnabled',
+            'fcmTokens',
+            'createdAt',
+            'updatedAt'
           ])
         )
       );
@@ -141,7 +176,7 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // ColecciÃ³n de eventos - filtrado por instituciÃ³n
+    // Coleccion de eventos - filtrado por institucion
     match /eventos/{eventId} {
       allow read: if isAuthenticated() && (
         isSuperAdmin() ||
@@ -149,7 +184,7 @@ service cloud.firestore {
         resource.data.reportadoPor_uid == request.auth.uid
       );
       
-      // Crear solo si la instituciÃ³n del usuario estÃ¡ activa
+      // Crear solo si la institucion del usuario esta activa
       allow create: if isAuthenticated() &&
         isInstitutionActive(getUserData().institutionId) &&
         request.resource.data.reportadoPor_uid == request.auth.uid;
@@ -427,7 +462,7 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || (isInstitutionAdmin(resource.data.institutionId) && isInstitutionActive(resource.data.institutionId));
     }
 
-    // ColecciÃ³n de asignaciones
+    // Coleccion de asignaciones
     match /assignments/{assignmentId} {
       allow read: if isAuthenticated() && (
         isSuperAdmin() ||
@@ -447,7 +482,7 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || (isAdminSst() && isInstitutionActive(getUserData().institutionId));
     }
 
-    // ColecciÃ³n de intentos de capacitaciÃ³n
+    // Coleccion de intentos de capacitacion
     match /trainingAttempts/{attemptId} {
       allow read: if isAuthenticated() && (
         isSuperAdmin() ||
@@ -461,7 +496,7 @@ service cloud.firestore {
       allow update, delete: if isSuperAdmin();
     }
 
-    // ColecciÃ³n de certificados
+    // Coleccion de certificados
     match /certificates/{certId} {
       allow read: if isAuthenticated() && (
         isSuperAdmin() ||
@@ -473,7 +508,7 @@ service cloud.firestore {
       allow update, delete: if isSuperAdmin();
     }
 
-    // ColecciÃ³n de planes de acciÃ³n
+    // Coleccion de planes de accion
     match /planesDeAccion/{planId} {
       allow read: if isAuthenticated() && (
         isSuperAdmin() ||
@@ -504,7 +539,17 @@ service cloud.firestore {
             'progressHistory',
             'executedAt'
           ]) &&
-          request.resource.data.status in ['en_curso', 'ejecutado'] &&
+          resource.data.status in ['pendiente', 'en_curso'] &&
+          (
+            (
+              resource.data.status == 'pendiente' &&
+              request.resource.data.status in ['en_curso', 'ejecutado']
+            ) ||
+            (
+              resource.data.status == 'en_curso' &&
+              request.resource.data.status in ['en_curso', 'ejecutado']
+            )
+          ) &&
           request.resource.data.estado == request.resource.data.status &&
           request.resource.data.executionUpdatedBy == request.auth.uid
         )
@@ -513,18 +558,18 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
-    // ColecciÃ³n de invitaciones - Lista blanca para registro de empleados
+    // Coleccion de invitaciones - lista blanca para registro de empleados
     match /invitations/{invitationId} {
-      // Lectura: cualquier usuario autenticado puede buscar su propia invitaciÃ³n por email
+      // Lectura: cualquier usuario autenticado puede buscar su propia invitacion por email
       allow read: if isAuthenticated();
       
-      // Crear: solo admins de instituciÃ³n activa o super admin
+      // Crear: solo admins de institucion activa o super admin
       allow create: if isAuthenticated() && (
         isSuperAdmin() || 
         (isAdminSst() && isInstitutionActive(getUserData().institutionId))
       );
       
-      // Actualizar: admin de la instituciÃ³n, super admin, o el usuario aceptando su propia invitaciÃ³n
+      // Actualizar: admin de la institucion, super admin, o el usuario aceptando su propia invitacion
       allow update: if isAuthenticated() && (
         isSuperAdmin() ||
         (isAdminSst() && resource.data.institutionId == getUserData().institutionId) ||
@@ -533,7 +578,7 @@ service cloud.firestore {
          resource.data.email == request.auth.token.email)
       );
       
-      // Eliminar: solo admin de la instituciÃ³n o super admin
+      // Eliminar: solo admin de la institucion o super admin
       allow delete: if isAuthenticated() && (
         isSuperAdmin() ||
         (isAdminSst() && resource.data.institutionId == getUserData().institutionId)
@@ -541,4 +586,7 @@ service cloud.firestore {
     }
   }
 }
+
+
+
 

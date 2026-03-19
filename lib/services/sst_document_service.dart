@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -11,6 +12,7 @@ import 'user_service.dart';
 
 class SstDocumentService {
   static const int maxPdfSizeBytes = 10 * 1024 * 1024;
+  static const Duration _uploadTimeout = Duration(seconds: 60);
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -415,6 +417,7 @@ class SstDocumentService {
   }) async {
     final ref = _storage.ref().child(storagePath);
     late UploadTask task;
+    StreamSubscription<TaskSnapshot>? progressSubscription;
 
     if (kIsWeb) {
       if (file.bytes == null) {
@@ -448,7 +451,7 @@ class SstDocumentService {
     }
 
     if (onProgress != null) {
-      task.snapshotEvents.listen((snapshot) {
+      progressSubscription = task.snapshotEvents.listen((snapshot) {
         final total = snapshot.totalBytes;
         if (total <= 0) {
           onProgress(0);
@@ -457,10 +460,24 @@ class SstDocumentService {
         onProgress(snapshot.bytesTransferred / total);
       });
     }
-
-    await task;
-    onProgress?.call(1);
-    return ref.getDownloadURL();
+    try {
+      await task.timeout(_uploadTimeout);
+      onProgress?.call(1);
+      return await ref.getDownloadURL().timeout(_uploadTimeout);
+    } on FirebaseException catch (e) {
+      throw Exception(
+        'Error de Storage (${e.code}): ${e.message ?? 'No se pudo subir el PDF.'}',
+      );
+    } on TimeoutException {
+      try {
+        await task.cancel().timeout(const Duration(seconds: 5));
+      } catch (_) {}
+      throw Exception(
+        'La subida del PDF excedio el tiempo limite. Verifica la conexion e intenta nuevamente.',
+      );
+    } finally {
+      await progressSubscription?.cancel();
+    }
   }
 
   String _buildStoragePath({

@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -2123,7 +2123,7 @@ class _VideoProgressSummary extends StatelessWidget {
                 child: Text(
                   totalCount == 0
                       ? 'Aun no hay capacitaciones en linea'
-                      : '$watchedCount de $totalCount completadas â€¢ $percent% â€¢ Restantes: $remaining',
+                      : '$watchedCount de $totalCount completadas - $percent% - Restantes: $remaining',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -2363,3 +2363,4 @@ class _YoutubeThumbnailState extends State<_YoutubeThumbnail> {
     return null;
   }
 }
+

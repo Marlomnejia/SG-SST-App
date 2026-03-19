@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
@@ -184,13 +185,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (value) {
         final enabled = await _notificationService.enableForUser(uid);
         if (!enabled) {
-          if (mounted) {
-            setState(() {
-              _notificationsEnabled = false;
-            });
+          final diagnostic = await _notificationService.getDiagnostic();
+          final denied =
+              diagnostic.authorizationStatus == AuthorizationStatus.denied;
+          if (denied) {
+            if (mounted) {
+              setState(() {
+                _notificationsEnabled = false;
+              });
+            }
+            await _userService.setNotificationsEnabled(uid, false);
+            _showMessage('Permiso de notificaciones denegado.');
+          } else {
+            _showMessage(
+              'No se pudo completar el registro del dispositivo. Intenta de nuevo.',
+            );
           }
-          await _userService.setNotificationsEnabled(uid, false);
-          _showMessage('Permiso de notificaciones denegado.');
         } else {
           _notificationRegistered = true;
         }
@@ -552,13 +562,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 if (mounted) {
                   setState(() {
                     _notificationRegistered = enabled;
-                    if (!enabled) {
-                      _notificationsEnabled = false;
-                    }
                   });
-                }
-                if (!enabled) {
-                  await _userService.setNotificationsEnabled(user.uid, false);
                 }
               });
             }

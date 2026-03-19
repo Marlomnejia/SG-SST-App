@@ -17,6 +17,7 @@ migrate_working_dir/
 *.ipr
 *.iws
 .idea/
+.vscode/
 
 # The .vscode folder contains launch configuration and tasks you configure in
 # VS Code which you may wish to be included in version control, so this line
@@ -32,18 +33,45 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+*.tmp
+*.bak
+*.orig
 
 # Symbolication related
 app.*.symbols
 
 # Obfuscation related
 app.*.map.json
+*.apk
+*.aab
+*.jks
+*.keystore
+key.properties
 
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/local.properties
+
+# Flutter ephemeral/generated local files
+/ios/Flutter/ephemeral/
+/macos/Flutter/ephemeral/
+/linux/flutter/ephemeral/
+/windows/flutter/ephemeral/
 
 # Local tooling cache and temporary auth exports
 .appdata/
+.localappdata/
+firebase-debug.log
+firestore-debug.log
+database-debug.log
+ui-debug.log
+.firebase/
+functions/node_modules/
 functions/auth-users*.json
+functions/.runtimeconfig.json
+functions/.env
+functions/.env.*
+functions/*serviceAccount*.json
+functions/*firebase-adminsdk*.json

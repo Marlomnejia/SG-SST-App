@@ -70,7 +70,22 @@ class UserService {
     required String? photoUrl,
     required String institutionId,
   }) async {
-    await _firestore.collection('users').doc(uid).set({
+    final userRef = _firestore.collection('users').doc(uid);
+    final existing = await userRef.get();
+
+    if (existing.exists) {
+      // Flujo social: el perfil base suele existir como "user".
+      // En ese caso solo promovemos rol + institucion con campos minimos.
+      await userRef.set({
+        'role': 'admin_sst',
+        'institutionId': institutionId,
+        'jobTitle': 'Administrador SG-SST',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      return;
+    }
+
+    await userRef.set({
       'email': email,
       'displayName': displayName ?? _fallbackName(email),
       'photoUrl': photoUrl,

@@ -1,4 +1,6 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -141,8 +143,6 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  _buildScopeHeader(documentCount: 0),
-                  const SizedBox(height: 20),
                   _buildEmptyStateCard(),
                 ],
               );
@@ -151,22 +151,16 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
             return ListView.builder(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              itemCount: docs.length + 2,
+              itemCount: docs.length + 1,
               itemBuilder: (context, index) {
                 if (index == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: _buildScopeHeader(documentCount: docs.length),
-                  );
-                }
-                if (index == 1) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: _buildCollectionCaption(documentCount: docs.length),
                   );
                 }
 
-                final model = SstDocumentModel.fromDoc(docs[index - 2]);
+                final model = SstDocumentModel.fromDoc(docs[index - 1]);
                 return _buildDocumentCard(model);
               },
             );
@@ -177,103 +171,6 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
         onPressed: _openCreateForm,
         icon: const Icon(Icons.upload_file_outlined),
         label: Text(_manageGlobal ? 'Subir global' : 'Subir documento'),
-      ),
-    );
-  }
-
-  Widget _buildScopeHeader({required int documentCount}) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final Color accent = _manageGlobal ? scheme.secondary : scheme.primary;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            accent.withValues(alpha: 0.18),
-            scheme.surfaceContainerHighest.withValues(alpha: 0.55),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 52,
-            width: 52,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(
-              _manageGlobal
-                  ? Icons.library_books_outlined
-                  : Icons.folder_special_outlined,
-              color: accent,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                AppMetaChip(
-                  icon: _manageGlobal
-                      ? Icons.public_outlined
-                      : Icons.school_outlined,
-                  label: _manageGlobal
-                      ? 'Alcance global'
-                      : 'Gestion institucional',
-                  background: accent.withValues(alpha: 0.12),
-                  foreground: accent,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  _manageGlobal
-                      ? 'Administra documentos base para todas las instituciones.'
-                      : 'Gestiona los documentos SST de tu institucion.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _heroPill(
-                      label: '$documentCount documento(s)',
-                      icon: Icons.description_outlined,
-                      color: accent,
-                    ),
-                    _manageGlobal
-                        ? _heroPill(
-                            label: 'Control centralizado',
-                            icon: Icons.hub_outlined,
-                            color: accent,
-                          )
-                        : _heroPill(
-                            label: 'Visible para usuarios',
-                            icon: Icons.groups_outlined,
-                            color: accent,
-                          ),
-                    _heroPill(
-                      label: 'Actualiza deslizando',
-                      icon: Icons.swipe_down_outlined,
-                      color: accent,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -367,34 +264,6 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
             icon: const Icon(Icons.upload_file),
             label: Text(
               _manageGlobal ? 'Subir documento global' : 'Subir documento',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heroPill({
-    required String label,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -689,8 +558,8 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
             _DocumentFormScreen(service: _service, manageGlobal: _manageGlobal),
       ),
     );
-    if (changed == true) {
-      await _bootstrap();
+    if (changed == true && mounted) {
+      setState(() {});
     }
   }
 
@@ -705,8 +574,8 @@ class _AdminDocumentsScreenState extends State<AdminDocumentsScreen> {
         ),
       ),
     );
-    if (changed == true) {
-      await _bootstrap();
+    if (changed == true && mounted) {
+      setState(() {});
     }
   }
 
@@ -1049,8 +918,8 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
                     title: const Text('Publicado'),
                     subtitle: Text(
                       widget.manageGlobal
-                          ? 'Visible para todas las instituciones'
-                          : 'Visible para usuarios de la institucion',
+                          ? 'Alcance global: visible para todas las instituciones'
+                          : 'Alcance institucional: visible para usuarios de tu institucion',
                     ),
                     value: _isPublished,
                     onChanged: _submitting
@@ -1119,6 +988,7 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
       _progress = 0;
     });
 
+    var savedSuccessfully = false;
     try {
       if (_isEditing) {
         await widget.service.updateDocument(
@@ -1134,6 +1004,11 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
             if (!mounted) return;
             setState(() => _progress = value);
           },
+        ).timeout(
+          const Duration(seconds: 75),
+          onTimeout: () => throw TimeoutException(
+            'La actualizacion tardo demasiado. Intenta nuevamente.',
+          ),
         );
       } else {
         await widget.service.createDocument(
@@ -1148,16 +1023,25 @@ class _DocumentFormScreenState extends State<_DocumentFormScreen> {
             if (!mounted) return;
             setState(() => _progress = value);
           },
+        ).timeout(
+          const Duration(seconds: 75),
+          onTimeout: () => throw TimeoutException(
+            'La subida tardo demasiado. Intenta nuevamente.',
+          ),
         );
       }
       if (!mounted) return;
       Navigator.pop(context, true);
+      savedSuccessfully = true;
     } catch (e) {
       if (!mounted) return;
-      setState(() => _submitting = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('No se pudo guardar el documento: $e')),
       );
+    } finally {
+      if (mounted && !savedSuccessfully) {
+        setState(() => _submitting = false);
+      }
     }
   }
 }

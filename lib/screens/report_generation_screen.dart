@@ -24,6 +24,10 @@ class _SgSstReportGenerationScreenState
   static const Set<String> _closedReportStatuses = <String>{
     'cerrado',
     'closed',
+    'solucionado',
+    'resuelto',
+    'finalizado',
+    'completed',
   };
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final UserService _userService = UserService();
@@ -91,9 +95,10 @@ class _SgSstReportGenerationScreenState
     final institutionNameFuture = _userService.getInstitutionName(
       institutionId,
     );
-    final usersFuture = _firestore
+    final usersCountFuture = _firestore
         .collection('users')
         .where('institutionId', isEqualTo: institutionId)
+        .count()
         .get();
     final reportsFuture = _firestore
         .collection('reports')
@@ -115,7 +120,7 @@ class _SgSstReportGenerationScreenState
         .get();
 
     final institutionName = await institutionNameFuture;
-    final usersSnapshot = await usersFuture;
+    final usersCountSnapshot = await usersCountFuture;
     final reportsSnapshot = await reportsFuture;
     final trainingsSnapshot = await trainingsFuture;
     final institutionDocumentsSnapshot = await institutionDocumentsFuture;
@@ -140,7 +145,10 @@ class _SgSstReportGenerationScreenState
                 ),
           );
 
-    final actionPlans = await _loadActionPlansForReports(filteredReports);
+    final actionPlans = await _loadActionPlansForReports(
+      filteredReports,
+      institutionId: institutionId,
+    );
     final trainingMetrics = await _buildTrainingMetrics(
       trainingDocs: trainingsSnapshot.docs,
       startDate: startDate,
@@ -165,7 +173,7 @@ class _SgSstReportGenerationScreenState
           : institutionName.trim(),
       startDate: startDate,
       endDate: endDate,
-      institutionUsers: usersSnapshot.docs.length,
+      institutionUsers: usersCountSnapshot.count ?? 0,
       generatedByName: currentUser?.displayName?.trim().isNotEmpty == true
           ? currentUser!.displayName!.trim()
           : (currentUser?.email.trim().isNotEmpty == true
@@ -186,6 +194,7 @@ class _SgSstReportGenerationScreenState
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
   _loadActionPlansForReports(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> reports,
+    {required String institutionId}
   ) async {
     if (reports.isEmpty) {
       return const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
@@ -195,20 +204,36 @@ class _SgSstReportGenerationScreenState
     final plans = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     const int chunkSize = 10;
 
+    final futures = <Future<QuerySnapshot<Map<String, dynamic>>>>[];
     for (int i = 0; i < reportIds.length; i += chunkSize) {
       final chunk = reportIds.sublist(
         i,
         i + chunkSize > reportIds.length ? reportIds.length : i + chunkSize,
       );
-      final snapshot = await _firestore
-          .collection('planesDeAccion')
-          .where('eventoId', whereIn: chunk)
-          .get();
+      futures.add(
+        _firestore
+            .collection('planesDeAccion')
+            .where('eventoId', whereIn: chunk)
+            .get(),
+      );
+    }
+    final snapshots = await Future.wait(futures);
+    for (final snapshot in snapshots) {
       plans.addAll(snapshot.docs);
     }
 
+    final scopedPlans = plans.where((plan) {
+      if (institutionId.trim().isEmpty) return true;
+      final planInstitutionId =
+          (plan.data()['institutionId'] ?? '').toString().trim();
+      // Compatibilidad legacy: si el plan no tiene institutionId, se conserva
+      // porque ya fue ligado por eventoId de reportes filtrados por institucion.
+      if (planInstitutionId.isEmpty) return true;
+      return planInstitutionId == institutionId;
+    }).toList();
+
     final unique = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
-    for (final plan in plans) {
+    for (final plan in scopedPlans) {
       unique[plan.id] = plan;
     }
 
@@ -245,6 +270,10 @@ class _SgSstReportGenerationScreenState
                     ),
           );
 
+    final counters = await Future.wait(
+      filtered.map(_buildTrainingCountersForDoc),
+    );
+
     int scheduled = 0;
     int video = 0;
     int published = 0;
@@ -256,64 +285,17 @@ class _SgSstReportGenerationScreenState
     int attendance = 0;
     int watched = 0;
 
-    for (final doc in filtered) {
-      final data = doc.data();
-      final type = (data['type'] ?? '').toString().trim();
-      final status = (data['status'] ?? '').toString().trim();
-
-      switch (status) {
-        case 'published':
-          published++;
-          break;
-        case 'cancelled':
-          cancelled++;
-          break;
-        default:
-          draft++;
-          break;
-      }
-
-      if (type == 'scheduled') {
-        scheduled++;
-        final responses = await doc.reference.collection('responses').get();
-        for (final responseDoc in responses.docs) {
-          final response = (responseDoc.data()['response'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-          switch (response) {
-            case 'yes':
-              rsvpYes++;
-              break;
-            case 'no':
-              rsvpNo++;
-              break;
-            case 'maybe':
-              rsvpMaybe++;
-              break;
-          }
-        }
-
-        final attendanceSnapshot = await doc.reference
-            .collection('attendance')
-            .get();
-        attendance += attendanceSnapshot.docs.where((item) {
-          final value = item.data()['attended'];
-          return value == true;
-        }).length;
-        continue;
-      }
-
-      if (type == 'video') {
-        video++;
-        final progressSnapshot = await doc.reference
-            .collection('progress')
-            .get();
-        watched += progressSnapshot.docs.where((item) {
-          final value = item.data()['watched'];
-          return value == true;
-        }).length;
-      }
+    for (final item in counters) {
+      scheduled += item.scheduledCount;
+      video += item.videoCount;
+      published += item.publishedCount;
+      draft += item.draftCount;
+      cancelled += item.cancelledCount;
+      rsvpYes += item.confirmedCount;
+      rsvpNo += item.declinedCount;
+      rsvpMaybe += item.maybeCount;
+      attendance += item.attendedCount;
+      watched += item.watchedCount;
     }
 
     return _TrainingMetrics(
@@ -387,23 +369,20 @@ class _SgSstReportGenerationScreenState
         .where((doc) => doc.data()['isPublished'] == true)
         .toList();
 
-    int requiredInstitution = 0;
-    int totalReads = 0;
-    int documentsWithReads = 0;
-
-    for (final doc in publishedInstitution) {
-      final data = doc.data();
-      if (data['isRequired'] == true) {
-        requiredInstitution++;
-      }
-
-      final readsCount =
-          (await doc.reference.collection('reads').count().get()).count ?? 0;
-      totalReads += readsCount;
-      if (readsCount > 0) {
-        documentsWithReads++;
-      }
-    }
+    final requiredInstitution = publishedInstitution.where((doc) {
+      return doc.data()['isRequired'] == true;
+    }).length;
+    final readsFutures = publishedInstitution.map((doc) {
+      return _safeCountQuery(doc.reference.collection('reads'));
+    }).toList();
+    final readsPerDocument = await Future.wait(readsFutures);
+    final totalReads = readsPerDocument.fold<int>(
+      0,
+      (total, current) => total + current,
+    );
+    final documentsWithReads = readsPerDocument
+        .where((readCount) => readCount > 0)
+        .length;
 
     return _DocumentMetrics(
       institutionDocuments: filteredInstitution,
@@ -439,18 +418,179 @@ class _SgSstReportGenerationScreenState
       final map = location is Map<String, dynamic>
           ? location
           : const <String, dynamic>{};
-      final normalized = (map['placeNormalized'] ?? '').toString().trim();
+      final normalizedStored = (map['placeNormalized'] ?? '').toString().trim();
       final placeName = (map['placeName'] ?? data['lugar'] ?? '')
           .toString()
           .trim();
+      final normalized = normalizedStored.isNotEmpty
+          ? _normalizePlaceKey(normalizedStored)
+          : _normalizePlaceKey(placeName);
       if (normalized.isEmpty) continue;
       counts.update(normalized, (value) => value + 1, ifAbsent: () => 1);
       labels.putIfAbsent(
         normalized,
-        () => placeName.isNotEmpty ? placeName : normalized,
+        () => placeName.isNotEmpty
+            ? placeName
+            : (normalizedStored.isNotEmpty ? normalizedStored : normalized),
       );
     }
     return _topItemsFromMap(counts, labelResolver: (key) => labels[key] ?? key);
+  }
+
+  Future<_TrainingDocCounters> _buildTrainingCountersForDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data();
+    final type = (data['type'] ?? '').toString().trim();
+    final status = (data['status'] ?? '').toString().trim();
+
+    int published = 0;
+    int draft = 0;
+    int cancelled = 0;
+    switch (status) {
+      case 'published':
+        published = 1;
+        break;
+      case 'cancelled':
+        cancelled = 1;
+        break;
+      default:
+        draft = 1;
+        break;
+    }
+
+    if (type == 'scheduled') {
+      final responsesRef = doc.reference.collection('responses');
+      final yesFuture = _safeCountQuery(
+        responsesRef.where('response', isEqualTo: 'yes'),
+      );
+      final noFuture = _safeCountQuery(
+        responsesRef.where('response', isEqualTo: 'no'),
+      );
+      final maybeFuture = _safeCountQuery(
+        responsesRef.where('response', isEqualTo: 'maybe'),
+      );
+      final attendanceFuture = _safeCountQuery(
+        doc.reference
+            .collection('attendance')
+            .where('attended', isEqualTo: true),
+      );
+      final results = await Future.wait<int>([
+        yesFuture,
+        noFuture,
+        maybeFuture,
+        attendanceFuture,
+      ]);
+      return _TrainingDocCounters(
+        scheduledCount: 1,
+        videoCount: 0,
+        publishedCount: published,
+        draftCount: draft,
+        cancelledCount: cancelled,
+        confirmedCount: results[0],
+        declinedCount: results[1],
+        maybeCount: results[2],
+        attendedCount: results[3],
+        watchedCount: 0,
+      );
+    }
+
+    if (type == 'video') {
+      final watchedCount = await _safeCountQuery(
+        doc.reference.collection('progress').where('watched', isEqualTo: true),
+      );
+      return _TrainingDocCounters(
+        scheduledCount: 0,
+        videoCount: 1,
+        publishedCount: published,
+        draftCount: draft,
+        cancelledCount: cancelled,
+        confirmedCount: 0,
+        declinedCount: 0,
+        maybeCount: 0,
+        attendedCount: 0,
+        watchedCount: watchedCount,
+      );
+    }
+
+    return _TrainingDocCounters(
+      scheduledCount: 0,
+      videoCount: 0,
+      publishedCount: published,
+      draftCount: draft,
+      cancelledCount: cancelled,
+      confirmedCount: 0,
+      declinedCount: 0,
+      maybeCount: 0,
+      attendedCount: 0,
+      watchedCount: 0,
+    );
+  }
+
+  Future<int> _safeCountQuery(Query<Map<String, dynamic>> query) async {
+    try {
+      final aggregate = await query.count().get();
+      return aggregate.count ?? 0;
+    } catch (_) {
+      final snapshot = await query.get();
+      return snapshot.size;
+    }
+  }
+
+  String _normalizePlaceKey(String value) {
+    final cleaned = _removeDiacritics(value)
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (cleaned.isEmpty) return '';
+    final justSymbolsOrDigits = RegExp(r'^[^a-z]+$').hasMatch(cleaned);
+    return justSymbolsOrDigits ? '' : cleaned;
+  }
+
+  String _removeDiacritics(String value) {
+    return value
+        .replaceAll('\u00E1', 'a')
+        .replaceAll('\u00E0', 'a')
+        .replaceAll('\u00E4', 'a')
+        .replaceAll('\u00E2', 'a')
+        .replaceAll('\u00C1', 'A')
+        .replaceAll('\u00C0', 'A')
+        .replaceAll('\u00C4', 'A')
+        .replaceAll('\u00C2', 'A')
+        .replaceAll('\u00E9', 'e')
+        .replaceAll('\u00E8', 'e')
+        .replaceAll('\u00EB', 'e')
+        .replaceAll('\u00EA', 'e')
+        .replaceAll('\u00C9', 'E')
+        .replaceAll('\u00C8', 'E')
+        .replaceAll('\u00CB', 'E')
+        .replaceAll('\u00CA', 'E')
+        .replaceAll('\u00ED', 'i')
+        .replaceAll('\u00EC', 'i')
+        .replaceAll('\u00EF', 'i')
+        .replaceAll('\u00EE', 'i')
+        .replaceAll('\u00CD', 'I')
+        .replaceAll('\u00CC', 'I')
+        .replaceAll('\u00CF', 'I')
+        .replaceAll('\u00CE', 'I')
+        .replaceAll('\u00F3', 'o')
+        .replaceAll('\u00F2', 'o')
+        .replaceAll('\u00F6', 'o')
+        .replaceAll('\u00F4', 'o')
+        .replaceAll('\u00D3', 'O')
+        .replaceAll('\u00D2', 'O')
+        .replaceAll('\u00D6', 'O')
+        .replaceAll('\u00D4', 'O')
+        .replaceAll('\u00FA', 'u')
+        .replaceAll('\u00F9', 'u')
+        .replaceAll('\u00FC', 'u')
+        .replaceAll('\u00FB', 'u')
+        .replaceAll('\u00DA', 'U')
+        .replaceAll('\u00D9', 'U')
+        .replaceAll('\u00DC', 'U')
+        .replaceAll('\u00DB', 'U')
+        .replaceAll('\u00F1', 'n')
+        .replaceAll('\u00D1', 'N');
   }
 
   List<_TopFindingItem> _computeTopOverdueResponsibles(
@@ -562,7 +702,20 @@ class _SgSstReportGenerationScreenState
   }
 
   String _normalizeReportStatus(dynamic value) {
-    return value.toString().trim().toLowerCase();
+    final normalized = value.toString().trim().toLowerCase();
+    if (normalized.contains('revisi')) return 'en_revision';
+    if (normalized.contains('proceso')) return 'en_proceso';
+    if (normalized.contains('solucion') ||
+        normalized.contains('cerrad') ||
+        normalized.contains('finaliz') ||
+        normalized.contains('resuelt') ||
+        normalized == 'closed' ||
+        normalized == 'completed') {
+      return 'cerrado';
+    }
+    if (normalized.contains('rechaz')) return 'rechazado';
+    if (normalized.contains('report')) return 'reportado';
+    return normalized;
   }
 
   String _friendlyRole(String? role) {
@@ -1361,7 +1514,7 @@ class _SgSstReportGenerationScreenState
             pw.SizedBox(height: 14),
             _buildPdfSectionTitle(
               'Conclusiones y recomendaciones',
-              subtitle: 'Acciones sugeridas para el siguiente ciclo.',
+              subtitle: 'Sugerencias autogeneradas segun los indicadores.',
             ),
             pw.SizedBox(height: 8),
             _buildPdfInsightList(
@@ -1683,6 +1836,11 @@ class _SgSstReportGenerationScreenState
       case 'en_proceso':
         return 'En proceso';
       case 'cerrado':
+      case 'closed':
+      case 'solucionado':
+      case 'resuelto':
+      case 'finalizado':
+      case 'completed':
         return 'Cerrado';
       case 'rechazado':
         return 'Rechazado';
@@ -2328,7 +2486,14 @@ class _GeneratedSgSstReport {
     return '${averageClosureHours!.toStringAsFixed(1)} h';
   }
 
-  static const Set<String> _closedStatuses = <String>{'cerrado', 'closed'};
+  static const Set<String> _closedStatuses = <String>{
+    'cerrado',
+    'closed',
+    'solucionado',
+    'resuelto',
+    'finalizado',
+    'completed',
+  };
 
   static DateTime? _safeDate(dynamic value) {
     if (value is Timestamp) return value.toDate();
@@ -2355,6 +2520,32 @@ class _TrainingMetrics {
 
   const _TrainingMetrics({
     required this.trainings,
+    required this.scheduledCount,
+    required this.videoCount,
+    required this.publishedCount,
+    required this.draftCount,
+    required this.cancelledCount,
+    required this.confirmedCount,
+    required this.declinedCount,
+    required this.maybeCount,
+    required this.attendedCount,
+    required this.watchedCount,
+  });
+}
+
+class _TrainingDocCounters {
+  final int scheduledCount;
+  final int videoCount;
+  final int publishedCount;
+  final int draftCount;
+  final int cancelledCount;
+  final int confirmedCount;
+  final int declinedCount;
+  final int maybeCount;
+  final int attendedCount;
+  final int watchedCount;
+
+  const _TrainingDocCounters({
     required this.scheduledCount,
     required this.videoCount,
     required this.publishedCount,

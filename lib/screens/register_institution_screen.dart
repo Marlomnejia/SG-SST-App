@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -300,14 +300,13 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
       }
 
       if (mounted) {
-        final email = _emailController.text.trim();
         await showDialog(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
-            title: const Text('¡Registro Exitoso!'),
+            title: const Text('Registro exitoso'),
             content: Text(
-              'La institucion ha sido registrada. Hemos enviado un correo de verificacion a $email. Por favor revisalo (incluyendo la carpeta de Spam) antes de continuar.',
+              'La institucion ha sido registrada y quedo en revision. Te notificaremos en la aplicacion cuando cambie su estado.',
             ),
             actions: [
               TextButton(
@@ -1088,3 +1087,4 @@ class _RegisterInstitutionScreenState extends State<RegisterInstitutionScreen> {
     );
   }
 }
+

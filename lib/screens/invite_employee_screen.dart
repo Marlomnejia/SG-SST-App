@@ -175,7 +175,7 @@ class _InviteEmployeeScreenState extends State<InviteEmployeeScreen> {
 
   bool get _canRegenerateInviteCode {
     final role = (_currentUserRole ?? '').trim();
-    return role == 'admin_sst' || role == 'admin';
+    return role == 'admin_sst' || role == 'adminsst' || role == 'admin';
   }
 
   Future<void> _copyInviteCode(String code) async {

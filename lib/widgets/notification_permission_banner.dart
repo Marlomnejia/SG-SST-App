@@ -27,14 +27,16 @@ class _NotificationPermissionBannerState
 
     try {
       final enabled = await _notificationService.enableForUser(uid);
-      await _userService.setNotificationsEnabled(uid, enabled);
+      if (enabled) {
+        await _userService.setNotificationsEnabled(uid, true);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             enabled
                 ? 'Notificaciones activadas correctamente.'
-                : 'No se concedio el permiso de notificaciones.',
+                : 'No se pudo completar la activacion. Intenta de nuevo.',
           ),
         ),
       );

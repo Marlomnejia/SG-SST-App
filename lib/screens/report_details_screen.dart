@@ -1191,10 +1191,78 @@ class _TimelineRow extends StatelessWidget {
   }
 }
 
-class _NetworkVideoCard extends StatelessWidget {
+class _NetworkVideoCard extends StatefulWidget {
   final String url;
 
   const _NetworkVideoCard({required this.url});
+
+  @override
+  State<_NetworkVideoCard> createState() => _NetworkVideoCardState();
+}
+
+class _NetworkVideoCardState extends State<_NetworkVideoCard> {
+  VideoPlayerController? _previewController;
+  bool _previewReady = false;
+  bool _previewError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPreviewController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NetworkVideoCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _disposePreviewController();
+      _initPreviewController();
+    }
+  }
+
+  void _initPreviewController() {
+    final uri = Uri.tryParse(widget.url);
+    if (uri == null) {
+      setState(() {
+        _previewError = true;
+      });
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(uri);
+    _previewController = controller;
+    controller.setLooping(false);
+    controller
+        .initialize()
+        .then((_) {
+          if (!mounted || _previewController != controller) return;
+          controller.pause();
+          setState(() {
+            _previewReady = true;
+            _previewError = false;
+          });
+        })
+        .catchError((_) {
+          if (!mounted || _previewController != controller) return;
+          setState(() {
+            _previewReady = false;
+            _previewError = true;
+          });
+        });
+  }
+
+  void _disposePreviewController() {
+    _previewController?.dispose();
+    _previewController = null;
+    _previewReady = false;
+    _previewError = false;
+  }
+
+  @override
+  void dispose() {
+    _disposePreviewController();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1212,7 +1280,7 @@ class _NetworkVideoCard extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => _FullScreenVideoScreen(url: url),
+              builder: (_) => _FullScreenVideoScreen(url: widget.url),
             ),
           );
         },
@@ -1227,55 +1295,79 @@ class _NetworkVideoCard extends StatelessWidget {
                 color: scheme.surface,
                 border: Border.all(color: scheme.outlineVariant),
               ),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: DecoratedBox(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (_previewReady && _previewController != null)
+                      FittedBox(
+                        fit: BoxFit.cover,
+                        clipBehavior: Clip.hardEdge,
+                        child: SizedBox(
+                          width: _previewController!.value.size.width <= 0
+                              ? 16
+                              : _previewController!.value.size.width,
+                          height: _previewController!.value.size.height <= 0
+                              ? 9
+                              : _previewController!.value.size.height,
+                          child: VideoPlayer(_previewController!),
+                        ),
+                      )
+                    else
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.black.withValues(alpha: 0.18),
+                              Colors.black.withValues(alpha: 0.32),
+                            ],
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                          ),
+                        ),
+                      ),
+                    DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.black.withValues(alpha: 0.18),
-                            Colors.black.withValues(alpha: 0.28),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
+                        color: Colors.black.withValues(alpha: 0.26),
+                      ),
+                    ),
+                    Center(
+                      child: Icon(
+                        Icons.play_circle_fill_rounded,
+                        size: 52,
+                        color: Colors.white.withValues(alpha: 0.94),
+                      ),
+                    ),
+                    Positioned(
+                      left: 8,
+                      right: 8,
+                      bottom: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _previewError
+                              ? 'Vista previa no disponible'
+                              : 'Toca para reproducir',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                       ),
                     ),
-                  ),
-                  Center(
-                    child: Icon(
-                      Icons.play_circle_fill_rounded,
-                      size: 52,
-                      color: scheme.onSurface,
-                    ),
-                  ),
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Miniatura no disponible',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 10),
