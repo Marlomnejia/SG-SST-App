@@ -23,7 +23,14 @@ flutter pub get
 ```
 
 4. Verificar configuracion Firebase del proyecto (`firebase_options.dart`, `android/app/google-services.json`).
-5. Ejecutar la app:
+5. Configurar clave de Google Maps para Android en `android/local.properties`:
+
+```properties
+MAPS_API_KEY=TU_CLAVE_DE_GOOGLE_MAPS
+```
+
+Tambien puede configurarse por variable de entorno `MAPS_API_KEY`.
+6. Ejecutar la app:
 
 ```bash
 flutter run

@@ -8,6 +8,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val mapsApiKey: String = (
+    project.findProperty("MAPS_API_KEY") as String?
+        ?: System.getenv("MAPS_API_KEY")
+        ?: ""
+)
+
 android {
     namespace = "com.example.app"
     compileSdk = flutter.compileSdkVersion
@@ -31,6 +37,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
     }
 
     buildTypes {
