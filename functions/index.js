@@ -348,26 +348,21 @@ async function collectUserTokensByUid(uid) {
 
 async function collectInstitutionAdminTokens(institutionId) {
   if (!institutionId) return [];
-  const usersRef = admin.firestore().collection("users");
-  const [institutionUsers, superAdmins] = await Promise.all([
-    usersRef.where("institutionId", "==", institutionId).get(),
-    usersRef.where("role", "==", "admin").get(),
-  ]);
+  const institutionUsers = await admin
+    .firestore()
+    .collection("users")
+    .where("institutionId", "==", institutionId)
+    .get();
   const tokenSet = new Set();
-  const snapshots = [institutionUsers, superAdmins];
-  for (const snapshot of snapshots) {
-    snapshot.forEach((doc) => {
-      const data = doc.data() || {};
-      const role = normalizeRole(data.role);
-      if (snapshot === institutionUsers && !isInstitutionAdminRole(role)) {
-        return;
-      }
-      const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
-      for (const token of tokens) {
-        if (token) tokenSet.add(token);
-      }
-    });
-  }
+  institutionUsers.forEach((doc) => {
+    const data = doc.data() || {};
+    const role = normalizeRole(data.role);
+    if (!isInstitutionAdminRole(role)) return;
+    const tokens = Array.isArray(data.fcmTokens) ? data.fcmTokens : [];
+    for (const token of tokens) {
+      if (token) tokenSet.add(token);
+    }
+  });
   return [...tokenSet];
 }
 
