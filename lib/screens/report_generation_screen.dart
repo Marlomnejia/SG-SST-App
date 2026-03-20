@@ -226,8 +226,7 @@ class _SgSstReportGenerationScreenState
       if (institutionId.trim().isEmpty) return true;
       final planInstitutionId =
           (plan.data()['institutionId'] ?? '').toString().trim();
-      // Compatibilidad legacy: si el plan no tiene institutionId, se conserva
-      // porque ya fue ligado por eventoId de reportes filtrados por institucion.
+      
       if (planInstitutionId.isEmpty) return true;
       return planInstitutionId == institutionId;
     }).toList();
