@@ -1,41 +1,27 @@
 # EduSST
 
-Aplicacion movil para la gestion de Seguridad y Salud en el Trabajo (SG-SST) en instituciones educativas.
+Aplicación móvil para la gestión de Seguridad y Salud en el Trabajo (SG-SST) en instituciones educativas.
 
-## Tecnologias
+## 📦 Descarga
 
-- Flutter / Dart
-- Firebase Authentication
-- Cloud Firestore
-- Firebase Storage
-- Firebase Cloud Functions
-- Firebase Cloud Messaging (FCM)
-- Google Maps (ubicacion en reportes)
+- APK de la aplicación: Disponible en la sección de **Releases** del repositorio.
+- Manual de usuario: Disponible en la carpeta `/docs`.
 
-## Ejecucion local
+## 🚀 Tecnologías
 
-1. Instalar Flutter SDK y dependencias de Android.
-2. Clonar el repositorio.
+- Flutter / Dart  
+- Firebase Authentication  
+- Cloud Firestore  
+- Firebase Storage  
+- Firebase Cloud Functions  
+- Firebase Cloud Messaging (FCM)  
+- Google Maps (ubicación en reportes)  
+
+## ⚙️ Ejecución local
+
+1. Instalar Flutter SDK y dependencias de Android.  
+2. Clonar el repositorio.  
 3. Ejecutar:
 
 ```bash
 flutter pub get
-```
-
-4. Verificar configuracion Firebase del proyecto (`firebase_options.dart`, `android/app/google-services.json`).
-5. Configurar clave de Google Maps para Android en `android/local.properties`:
-
-```properties
-MAPS_API_KEY=TU_CLAVE_DE_GOOGLE_MAPS
-```
-
-Tambien puede configurarse por variable de entorno `MAPS_API_KEY`.
-6. Ejecutar la app:
-
-```bash
-flutter run
-```
-
-## Nota de entrega
-
-Este repositorio contiene el codigo fuente de la version final del proyecto academico EduSST.
